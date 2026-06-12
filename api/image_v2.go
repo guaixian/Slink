@@ -7,7 +7,6 @@ import (
 	"Slink/storage"
 	"Slink/utils"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -222,37 +221,11 @@ func UploadImageFromURLV2(c *gin.Context) {
 
 	applog.Logger.Info("upload url v2: start", "request_id", rid, "user_id", userID, "remote_url", requestData.URL, "strategy_id", requestData.StrategyID)
 
-	// 下载图片
-	resp, err := http.Get(requestData.URL)
+	// 安全下载图片（带超时、协议校验与大小上限，避免 SSRF/OOM/挂起）
+	imageData, contentType, err := downloadRemoteImage(requestData.URL, int64(policy.MaximumFileSize*1024))
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "下载图片失败: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)})
-		return
-	}
-
-	// 检查Content-Type
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "image/") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "URL不是有效的图片"})
-		return
-	}
-
-	// 检查文件大小
-	contentLength := resp.ContentLength
-	if contentLength > int64(policy.MaximumFileSize*1024) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("文件大小超过限制（%dKB）", policy.MaximumFileSize)})
-		return
-	}
-
-	// 读取图片数据
-	imageData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取图片数据失败"})
+		applog.Logger.Warn("upload url v2: download failed", "request_id", rid, "user_id", userID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

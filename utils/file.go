@@ -341,13 +341,22 @@ func generateMD5() string {
 }
 
 // generateRandomString 生成随机字符串
+// 使用 crypto/rand 提供真正的随机性；旧实现以 time.Now().UnixNano()%len 取字符，
+// 在同一纳秒内的循环中会得到几乎完全相同的字符，导致 {str-random-*} 路径规则高概率碰撞。
 func generateRandomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-	result := make([]byte, length)
-	for i := range result {
-		result[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+	buf := make([]byte, length)
+	if _, err := rand.Read(buf); err != nil {
+		// 退化为基于纳秒种子的弱随机，仅作为 crypto/rand 不可用时的兜底
+		for i := range buf {
+			buf[i] = charset[(time.Now().UnixNano()+int64(i))%int64(len(charset))]
+		}
+		return string(buf)
 	}
-	return string(result)
+	for i := range buf {
+		buf[i] = charset[int(buf[i])%len(charset)]
+	}
+	return string(buf)
 }
 
 // GetRealClientIP 获取真实的客户端IP地址

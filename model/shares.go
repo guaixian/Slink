@@ -14,7 +14,7 @@ type Share struct {
 	ImageID   uint       `gorm:"not null;index;comment:图片ID" json:"image_id"`
 	ShareCode string     `gorm:"type:varchar(32);uniqueIndex;not null;comment:分享码" json:"share_code"`
 	Password  string     `gorm:"type:varchar(255);comment:分享密码(加密存储)" json:"-"` // 密码（加密存储）
-	ExpiresAt *time.Time `comment:过期时间" json:"expires_at"`
+	ExpiresAt *time.Time `gorm:"comment:过期时间" json:"expires_at"`
 	ViewCount int        `gorm:"default:0;comment:查看次数" json:"view_count"`         // 查看次数
 	MaxViews  int        `gorm:"default:0;comment:最大查看次数 0表示无限制" json:"max_views"` // 最大查看次数（0表示无限制）
 	IsActive  bool       `gorm:"default:true;comment:是否激活" json:"is_active"`       // 是否激活
