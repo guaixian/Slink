@@ -88,20 +88,27 @@ type wireResponse struct {
 // 始终返回非 nil 的 *Client；是否真正可用由 Configured() 判断。
 func LoadFromEnv() *Client {
 	endpoint := strings.TrimSpace(os.Getenv("SLINK_AI_ENDPOINT"))
-	endpoint = strings.TrimRight(endpoint, "/")
 	token := strings.TrimSpace(os.Getenv("SLINK_AI_TOKEN"))
-
 	timeout := defaultTimeoutSeconds
 	if v := strings.TrimSpace(os.Getenv("SLINK_AI_TIMEOUT")); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n > 0 {
 			timeout = n
 		}
 	}
+	return NewClient(endpoint, token, timeout)
+}
 
+// NewClient 用显式参数构造客户端（供从 DB 配置解析后调用）。
+// endpoint 为空时 Configured() 返回 false；timeout<=0 时使用默认值。
+func NewClient(endpoint, token string, timeoutSeconds int) *Client {
+	endpoint = strings.TrimRight(strings.TrimSpace(endpoint), "/")
+	if timeoutSeconds <= 0 {
+		timeoutSeconds = defaultTimeoutSeconds
+	}
 	return &Client{
 		endpoint: endpoint,
-		token:    token,
-		http:     &http.Client{Timeout: time.Duration(timeout) * time.Second},
+		token:    strings.TrimSpace(token),
+		http:     &http.Client{Timeout: time.Duration(timeoutSeconds) * time.Second},
 	}
 }
 

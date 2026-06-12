@@ -394,6 +394,26 @@ export const adminAPI = {
     return http.get<ApiResponse<any>>('/api/admin/upload-policy')
   },
 
+  // ===== AI 设置（图像扩展 / LLM / Embedding 平台与密钥）=====
+
+  /** 读取 AI 设置（密钥脱敏，env 锁定字段带 from_env 标记） */
+  getAISettings: () => {
+    return http.get<ApiResponse<AISettingsData>>('/api/admin/ai-settings')
+  },
+
+  /** 保存 AI 设置（密钥留空/未改则保留原值；env 锁定字段忽略） */
+  updateAISettings: (values: Record<string, string>) => {
+    return http.put<ApiResponse<any>>('/api/admin/ai-settings', values)
+  },
+
+  /** 测试 AI 连接，target: image|llm|embedding */
+  testAISettings: (target: 'image' | 'llm' | 'embedding') => {
+    return http.post<ApiResponse<{ ok: boolean; status?: number; message: string }>>(
+      '/api/admin/ai-settings/test',
+      { target },
+    )
+  },
+
   updateUploadPolicy: (data: Record<string, unknown>) => {
     return http.put<ApiResponse<any>>('/api/admin/upload-policy', data)
   },
@@ -419,6 +439,35 @@ export interface BackupImportResult {
   status: boolean
   message?: string
   error?: string
+}
+
+// 单个 AI 配置字段（密钥已脱敏；from_env 表示由环境变量锁定，只读）
+export interface AISettingField {
+  key: string
+  value: string
+  has_value: boolean
+  from_env: boolean
+  is_secret: boolean
+}
+
+export interface AISettingsData {
+  image: {
+    endpoint: AISettingField
+    token: AISettingField
+    timeout: AISettingField
+  }
+  llm: {
+    base_url: AISettingField
+    api_key: AISettingField
+    model: AISettingField
+  }
+  embedding: {
+    base_url: AISettingField
+    api_key: AISettingField
+    model: AISettingField
+    dimensions: AISettingField
+  }
+  note: string
 }
 
 // 存储策略接口

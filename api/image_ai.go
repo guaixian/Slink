@@ -4,28 +4,35 @@ import (
 	"Slink/aiext"
 	"Slink/applog"
 	"Slink/middleware"
+	"Slink/model"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"strconv"
-	"sync"
 
 	"github.com/gin-gonic/gin"
 )
 
-// aiClient 进程级单例，按启动时的环境变量配置
-var (
-	aiClient     *aiext.Client
-	aiClientOnce sync.Once
-)
-
+// getAIClient 依据当前 AI 设置（DB 配置，env 覆盖）构造图像扩展客户端。
+// 每次请求解析一次，使后台修改即时生效；读 DB 成本极低。
 func getAIClient() *aiext.Client {
-	aiClientOnce.Do(func() {
-		aiClient = aiext.LoadFromEnv()
-	})
-	return aiClient
+	s, err := model.LoadAISettings(model.DB)
+	if err != nil {
+		return aiext.NewClient("", "", 0) // 解析失败按未配置处理
+	}
+	timeout := 0
+	if v := s.Get(model.ConfigKeyAIImageTimeout); v != "" {
+		if n, e := strconv.Atoi(v); e == nil {
+			timeout = n
+		}
+	}
+	return aiext.NewClient(
+		s.Get(model.ConfigKeyAIImageEndpoint),
+		s.Get(model.ConfigKeyAIImageToken),
+		timeout,
+	)
 }
 
 // AIStatus 返回外置 AI 扩展的启用状态，便于前端按需展示入口
@@ -203,10 +210,10 @@ func AITag(c *gin.Context) {
 // respondAINotConfigured 统一返回未配置外置扩展的提示
 func respondAINotConfigured(c *gin.Context, capability string) {
 	c.JSON(http.StatusNotImplemented, gin.H{
-		"status":     false,
-		"message":    "该功能为外置扩展，依赖外部 AI 服务，当前未配置",
-		"capability": capability,
-		"hint":       "设置环境变量 SLINK_AI_ENDPOINT 指向外部服务后启用；对接说明见 docs/ai-extension.md",
+		"status":              false,
+		"message":             "该功能为外置扩展，依赖外部 AI 服务，当前未配置",
+		"capability":          capability,
+		"hint":                "设置环境变量 SLINK_AI_ENDPOINT 指向外部服务后启用；对接说明见 docs/ai-extension.md",
 		"output_formats_note": "若仅需本地压缩/格式转换/高质量缩放，请改用 /api/image/process",
 	})
 }

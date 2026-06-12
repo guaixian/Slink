@@ -94,6 +94,12 @@
             <span>系统设置</span>
           </router-link>
         </li>
+        <li class="nav-item" :class="{ active: $route.name === 'admin-ai-settings' }">
+          <router-link to="/admin/ai-settings" class="flex items-center">
+            <i class="fa fa-flask mr-3"></i>
+            <span>AI 设置</span>
+          </router-link>
+        </li>
         <li class="nav-item" :class="{ active: $route.name === 'admin-storage' || $route.name === 'admin-storage-create' || $route.name === 'admin-storage-edit' }">
           <router-link to="/admin/storage" class="flex items-center">
             <i class="fa fa-database mr-3"></i>
@@ -228,6 +234,8 @@ const pageTitle = computed(() => {
       return '上传策略'
     case 'admin-settings':
       return '系统设置'
+    case 'admin-ai-settings':
+      return 'AI 设置'
     case 'admin-storage':
     case 'admin-storage-create':
     case 'admin-storage-edit':

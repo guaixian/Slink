@@ -22,8 +22,8 @@
         </template>
         <template v-else>
           <i class="fa fa-exclamation-triangle mr-1"></i>
-          未配置外置 AI 扩展。请在服务端设置环境变量
-          <code class="mono">SLINK_AI_ENDPOINT</code> 指向外部服务后使用；对接说明见
+          未配置外置 AI 扩展。可在后台<strong>「AI 设置」</strong>页填写图像扩展服务地址，或设置环境变量
+          <code class="mono">SLINK_AI_ENDPOINT</code>；对接说明见
           <code class="mono">docs/ai-extension.md</code>。仅需压缩/格式转换/高清缩放可改用「图片处理」页。
         </template>
       </div>

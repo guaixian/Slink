@@ -25,13 +25,32 @@
 
 ---
 
-## 2. 启用方式（环境变量）
+## 2. 启用方式
 
-| 变量 | 必填 | 说明 |
-| --- | --- | --- |
-| `SLINK_AI_ENDPOINT` | 是 | 外部服务基础地址，如 `http://127.0.0.1:9000`。未设置即视为未启用。 |
-| `SLINK_AI_TOKEN` | 否 | 调用令牌，作为 `Authorization: Bearer <token>` 头发送。 |
-| `SLINK_AI_TIMEOUT` | 否 | 单次请求超时秒数，默认 `120`。 |
+有两种方式配置，二选一即可：
+
+### 方式一：后台「AI 设置」页（推荐，可视化）
+
+管理员登录后进入 **系统 → AI 设置**，填写：
+
+- **图像处理外置扩展**：服务地址 Endpoint、令牌 Token、超时
+- **LLM 平台**（OpenAI 兼容）：Base URL、API Key、默认模型
+- **向量 Embedding 平台**（OpenAI 兼容）：Base URL、API Key、默认模型、维度
+
+每块都有「测试连接」按钮。配置入库（`configs` 表），密钥在接口返回时脱敏展示，
+保存时留空表示保留原值。LLM / Embedding 当前用于配置与连通性测试，能力预留。
+
+### 方式二：环境变量（优先级更高，适合 Docker 注入密钥）
+
+设置了下列环境变量的字段会**覆盖**后台配置，并在后台显示为只读（避免明文落库）：
+
+| 变量 | 说明 |
+| --- | --- |
+| `SLINK_AI_ENDPOINT` | 图像扩展服务地址，如 `http://127.0.0.1:9000`。未配置即视为未启用。 |
+| `SLINK_AI_TOKEN` | 图像扩展令牌，作为 `Authorization: Bearer <token>` 头发送。 |
+| `SLINK_AI_TIMEOUT` | 图像扩展请求超时秒数，默认 `120`。 |
+| `SLINK_AI_LLM_BASE_URL` / `SLINK_AI_LLM_API_KEY` / `SLINK_AI_LLM_MODEL` | LLM 平台 |
+| `SLINK_AI_EMBEDDING_BASE_URL` / `SLINK_AI_EMBEDDING_API_KEY` / `SLINK_AI_EMBEDDING_MODEL` / `SLINK_AI_EMBEDDING_DIMENSIONS` | Embedding 平台 |
 
 docker-compose 示例：
 

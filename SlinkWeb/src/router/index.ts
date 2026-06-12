@@ -15,6 +15,7 @@ import ApiReference from '../components/user/ApiReference.vue'
 import ImageManagement from '../components/admin/ImageManagement.vue'
 import SystemConsole from '../components/admin/SystemConsole.vue'
 import SystemSettings from '../components/admin/SystemSettings.vue'
+import AISettings from '../components/admin/AISettings.vue'
 import UploadPolicySettings from '../components/admin/UploadPolicySettings.vue'
 import StorageStrategy from '../components/admin/StorageStrategy.vue'
 import StorageStrategyEdit from '../components/admin/StorageStrategyEdit.vue'
@@ -113,6 +114,11 @@ const router = createRouter({
           path: 'settings',
           name: 'admin-settings',
           component: SystemSettings,
+        },
+        {
+          path: 'ai-settings',
+          name: 'admin-ai-settings',
+          component: AISettings,
         },
       ],
     },

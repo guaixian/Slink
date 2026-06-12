@@ -166,6 +166,11 @@ func configureAdminRoutes(apiGroup *gin.RouterGroup) {
 		// 系统统计信息
 		adminGroup.GET("/stats", api.GetSystemStats)
 
+		// AI 设置（图像扩展/LLM/Embedding 平台与密钥），含连接测试
+		adminGroup.GET("/ai-settings", api.GetAISettings)
+		adminGroup.PUT("/ai-settings", api.UpdateAISettings)
+		adminGroup.POST("/ai-settings/test", api.TestAISettings)
+
 		// 多用户/用户组相关接口已移除（个人图床）
 	}
 }
