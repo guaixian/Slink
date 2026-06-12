@@ -90,6 +90,10 @@ func configureImageRoutes(apiGroup *gin.RouterGroup) {
 		imgGroup.GET("/:id/qrcode-base64", api.GenerateQRCodeBase64)
 		imgGroup.GET("/config", api.GetUserGroupConfig)
 		imgGroup.GET("/rate-limit", api.GetRateLimitInfo)
+
+		// 本地图片处理（纯Go，无外部依赖）：压缩/格式转换/高质量缩放放大/缩略图
+		imgGroup.POST("/process", api.ProcessImage)
+		imgGroup.GET("/process/capabilities", api.GetProcessCapabilities)
 	}
 }
 
