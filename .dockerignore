@@ -1,0 +1,14 @@
+.git
+.gitignore
+**/.DS_Store
+SlinkWeb/node_modules
+# 保留 SlinkWeb/dist：镜像直接使用宿主机 pnpm run build 产物
+backweb/node_modules
+backweb/dist
+dist
+.claude
+*.md
+agent-transcripts
+terminals
+.env
+.env.local

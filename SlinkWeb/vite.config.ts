@@ -1,0 +1,28 @@
+import { fileURLToPath, URL } from 'node:url'
+
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import vueDevTools from 'vite-plugin-vue-devtools'
+import type { PluginOption } from 'vite'
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [
+    vue(),
+    vueDevTools(),
+  ] as PluginOption[],
+  resolve: {
+    alias: {
+      '@': fileURLToPath(new URL('./src', import.meta.url))
+    },
+  },
+  server: {
+    proxy: {
+      // 与 request.ts 空 baseURL 配合：dev 时请求 /api 转发到本机 Go 服务
+      '/api': {
+        target: process.env.SLINK_API_TARGET ?? 'http://127.0.0.1:8080',
+        changeOrigin: true,
+      },
+    },
+  },
+})

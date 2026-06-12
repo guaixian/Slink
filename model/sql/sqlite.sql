@@ -1,0 +1,109 @@
+-- SQLite 数据库初始化脚本
+-- 注意：SQLite使用GORM AutoMigrate自动创建表，此文件仅作参考
+-- 以下是表结构定义：
+
+-- 用户表
+-- CREATE TABLE users (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     group_id INTEGER NOT NULL DEFAULT 1,
+--     name TEXT NOT NULL DEFAULT '集帅',
+--     email TEXT NOT NULL UNIQUE,
+--     password TEXT NOT NULL,
+--     is_admin INTEGER NOT NULL DEFAULT 0,
+--     capacity INTEGER NOT NULL DEFAULT 0,
+--     configs TEXT NOT NULL,
+--     image_nums INTEGER NOT NULL DEFAULT 0,
+--     registered_ip TEXT NOT NULL DEFAULT '',
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );
+
+-- 系统配置表
+-- CREATE TABLE configs (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     config_key TEXT NOT NULL UNIQUE,
+--     value TEXT NOT NULL,
+--     description TEXT,
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );
+
+-- 用户组表
+-- CREATE TABLE groups (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     name TEXT NOT NULL,
+--     is_default INTEGER NOT NULL DEFAULT 0,
+--     is_guest INTEGER NOT NULL DEFAULT 0,
+--     configs TEXT NOT NULL,
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );
+
+-- 个人访问令牌表
+-- CREATE TABLE personal_access_tokens (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     api_name TEXT NOT NULL,
+--     username TEXT NOT NULL,
+--     token TEXT NOT NULL,
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );
+
+-- 用户组与存储策略关联表
+-- CREATE TABLE group_strategies (
+--     group_id INTEGER NOT NULL,
+--     strategy_id INTEGER NOT NULL,
+--     created_at INTEGER,
+--     updated_at INTEGER,
+--     PRIMARY KEY (group_id, strategy_id)
+-- );
+
+-- 存储策略表
+-- CREATE TABLE strategies (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     name TEXT NOT NULL UNIQUE,
+--     introduction TEXT NOT NULL,
+--     strategy_key TEXT NOT NULL UNIQUE,
+--     configs TEXT NOT NULL,
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );
+
+-- 图片信息表
+-- CREATE TABLE images (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     user_id INTEGER NOT NULL,
+--     group_id INTEGER NOT NULL,
+--     strategy_id INTEGER NOT NULL,
+--     image_key TEXT NOT NULL,
+--     path TEXT NOT NULL,
+--     name TEXT NOT NULL,
+--     origin_name TEXT NOT NULL,
+--     size INTEGER NOT NULL,
+--     mimetype TEXT NOT NULL,
+--     extension TEXT NOT NULL,
+--     md5 TEXT NOT NULL,
+--     sha1 TEXT NOT NULL,
+--     width INTEGER NOT NULL,
+--     height INTEGER NOT NULL,
+--     permissions INTEGER NOT NULL DEFAULT 0,
+--     is_unhealthy INTEGER NOT NULL DEFAULT 0,
+--     upload_ip TEXT NOT NULL,
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );
+
+-- 图片分享记录表
+-- CREATE TABLE shares (
+--     id INTEGER PRIMARY KEY AUTOINCREMENT,
+--     user_id INTEGER NOT NULL,
+--     image_id INTEGER NOT NULL,
+--     share_code TEXT NOT NULL UNIQUE,
+--     password TEXT,
+--     expires_at DATETIME,
+--     view_count INTEGER NOT NULL DEFAULT 0,
+--     max_views INTEGER NOT NULL DEFAULT 0,
+--     is_active INTEGER NOT NULL DEFAULT 1,
+--     created_at DATETIME,
+--     updated_at DATETIME
+-- );

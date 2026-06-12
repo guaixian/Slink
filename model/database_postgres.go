@@ -1,0 +1,61 @@
+package model
+
+import (
+	"fmt"
+
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+)
+
+// InitPostgreSQL 初始化PostgreSQL数据库连接
+// 连接到PostgreSQL数据库并创建数据库（如果不存在）
+func InitPostgreSQL(config *DBConfig) (*gorm.DB, error) {
+	// 先连接postgres系统数据库
+	dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=%s",
+		config.Host,
+		config.Port,
+		config.User,
+		config.Password,
+		config.SSLMode,
+	)
+
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("连接PostgreSQL服务器失败: %w", err)
+	}
+
+	// 创建数据库
+	createDBsql := fmt.Sprintf("CREATE DATABASE \"%s\"", config.DBName)
+	if err := db.Exec(createDBsql).Error; err != nil {
+		// 数据库可能已存在，忽略错误
+	}
+
+	// 关闭当前连接
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil, err
+	}
+	sqlDB.Close()
+
+	// 连接到指定数据库
+	dsn = fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
+		config.Host,
+		config.Port,
+		config.User,
+		config.Password,
+		config.DBName,
+		config.SSLMode,
+	)
+
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		return nil, fmt.Errorf("连接数据库失败: %w", err)
+	}
+
+	// 执行SQL初始化脚本
+	if err := executeSQLFile(db, "postgresql"); err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}

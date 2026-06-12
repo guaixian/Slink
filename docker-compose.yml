@@ -1,0 +1,19 @@
+services:
+  slink:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      GIN_MODE: release
+      # 必设长随机串；可用 openssl rand -base64 48
+      SLINK_JWT_SECRET: ${SLINK_JWT_SECRET:?set SLINK_JWT_SECRET in .env file}
+      SLINK_ADDR: ":8080"
+      # 无 config/database.json 时生效（首次初始化）
+      DB_TYPE: sqlite
+      DB_NAME: /app/data/data.db
+    volumes:
+      # 宿主机持久化根目录，默认 U 盘路径；可在 .env 中设置 SLINK_DATA_ROOT=其他路径
+      - ${SLINK_DATA_ROOT:-/mnt/usb1/Slink}/config:/app/config
+      - ${SLINK_DATA_ROOT:-/mnt/usb1/Slink}/data:/app/data
+      - ${SLINK_DATA_ROOT:-/mnt/usb1/Slink}/static:/app/static
+    restart: unless-stopped
