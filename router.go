@@ -94,6 +94,16 @@ func configureImageRoutes(apiGroup *gin.RouterGroup) {
 		// 本地图片处理（纯Go，无外部依赖）：压缩/格式转换/高质量缩放放大/缩略图
 		imgGroup.POST("/process", api.ProcessImage)
 		imgGroup.GET("/process/capabilities", api.GetProcessCapabilities)
+
+		// AI 图片处理（外置扩展，依赖外部服务）：智能去水印/超分辨率/智能打标
+		// 未配置 SLINK_AI_ENDPOINT 时相关接口返回 501 并说明对接方式
+		aiGroup := imgGroup.Group("/ai")
+		{
+			aiGroup.GET("/status", api.AIStatus)
+			aiGroup.POST("/dewatermark", api.AIDewatermark)
+			aiGroup.POST("/upscale", api.AIUpscale)
+			aiGroup.POST("/tag", api.AITag)
+		}
 	}
 }
 
