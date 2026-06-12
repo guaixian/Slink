@@ -137,6 +137,22 @@
                     >
                       <i class="fa fa-times"></i>
                     </button>
+                    <button
+                        v-if="item.status === 'error'"
+                        class="action-btn upload-btn"
+                        @click="retryUpload(item)"
+                    >
+                      <i class="fa fa-refresh"></i>
+                      <span class="btn-text">重试</span>
+                    </button>
+                    <button
+                        v-if="item.status === 'error' || item.status === 'success'"
+                        class="action-btn cancel-btn"
+                        @click="removeFromQueue(item)"
+                    >
+                      <i class="fa fa-times"></i>
+                      <span class="btn-text">移除</span>
+                    </button>
                   </div>
                   <div class="item-row">
                     <span class="status-text" :class="getStatusClass(item.status)">
@@ -538,6 +554,15 @@ const uploadFile = async (item: any) => {
     showErrorMessage('上传失败，请重试')
     console.error('上传失败:', error)
   }
+}
+
+// 重试上传（失败后队列项重置为等待态再上传，避免 uploadFile 因状态非 waiting 直接返回）
+const retryUpload = (item: any) => {
+  if (item.status !== 'error') return
+  item.status = 'waiting'
+  item.error = undefined
+  item.progress = 0
+  uploadFile(item)
 }
 
 // 从队列移除

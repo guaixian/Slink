@@ -183,7 +183,144 @@ export const imageAPI = {
   /** 全局上传策略（含水印配置），需登录；与管理员「上传策略」同源数据 */
   getUploadGroupConfig: () => {
     return http.get<ApiResponse<Record<string, unknown>>>('/api/image/config')
-  }
+  },
+
+  // ===== 本地图片处理（纯Go，无外部依赖）=====
+
+  /** 本地处理能力（支持的操作/格式/上限） */
+  getProcessCapabilities: () => {
+    return http.get<ApiResponse<ProcessCapabilities>>('/api/image/process/capabilities')
+  },
+
+  /**
+   * 本地处理图片：压缩/格式转换/高质量缩放放大/缩略图。
+   * 统一以 response=json 返回 base64 与元数据，便于前端预览与下载。
+   */
+  processImage: (file: File, options: ProcessOptions = {}) => {
+    const fd = new FormData()
+    fd.append('image', file)
+    fd.append('response', 'json')
+    if (options.operation) fd.append('operation', options.operation)
+    if (options.format) fd.append('format', options.format)
+    if (options.quality != null) fd.append('quality', String(options.quality))
+    if (options.width != null) fd.append('width', String(options.width))
+    if (options.height != null) fd.append('height', String(options.height))
+    if (options.scale != null) fd.append('scale', String(options.scale))
+    if (options.max_size != null) fd.append('max_size', String(options.max_size))
+    return http.post<ApiResponse<ProcessedImage>>('/api/image/process', fd, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000,
+    })
+  },
+
+  // ===== AI 图片处理（外置扩展，依赖外部服务）=====
+
+  /** 查询 AI 外置扩展是否已配置及可用能力 */
+  getAIStatus: () => {
+    return http.get<ApiResponse<AIStatus>>('/api/image/ai/status')
+  },
+
+  /** 智能去水印（外置扩展，未配置返回 501） */
+  aiDewatermark: (file: File, options: AIOptions = {}) => {
+    return aiImageRequest('/api/image/ai/dewatermark', file, options)
+  },
+
+  /** AI 超分辨率/高清放大（外置扩展，未配置返回 501） */
+  aiUpscale: (file: File, options: AIOptions = {}) => {
+    return aiImageRequest('/api/image/ai/upscale', file, options)
+  },
+
+  /** 智能识别/自动打标（外置扩展，未配置返回 501） */
+  aiTag: (file: File, options: AIOptions = {}) => {
+    const fd = buildAIFormData(file, options)
+    return http.post<ApiResponse<{ tags: AITag[]; meta?: Record<string, unknown> }>>(
+      '/api/image/ai/tag',
+      fd,
+      { headers: { 'Content-Type': 'multipart/form-data' }, timeout: 180000 },
+    )
+  },
+}
+
+// 本地处理操作类型
+export type ProcessOperation = 'compress' | 'convert' | 'resize' | 'thumbnail'
+
+export interface ProcessOptions {
+  operation?: ProcessOperation
+  format?: string
+  quality?: number
+  width?: number
+  height?: number
+  scale?: number
+  max_size?: number
+}
+
+export interface ProcessedImage {
+  format: string
+  mimetype: string
+  width: number
+  height: number
+  size_bytes: number
+  base64: string
+  data_uri: string
+  origin_name: string
+}
+
+export interface ProcessCapabilities {
+  operations: string[]
+  input_formats: string[]
+  output_formats: string[]
+  max_dimension: number
+  default_quality: number
+  note: string
+  webp_output_local: boolean
+}
+
+export interface AIStatus {
+  configured: boolean
+  endpoint: string
+  capabilities: string[]
+  note: string
+}
+
+export interface AIOptions {
+  scale?: number
+  prompt?: string
+  model?: string
+  regions?: unknown
+}
+
+export interface AIProcessedImage {
+  mimetype: string
+  size_bytes: number
+  base64: string
+  data_uri: string
+  meta?: Record<string, unknown>
+}
+
+export interface AITag {
+  name: string
+  score: number
+}
+
+// 组装 AI 请求的 FormData（图像类能力共用）
+function buildAIFormData(file: File, options: AIOptions): FormData {
+  const fd = new FormData()
+  fd.append('image', file)
+  if (options.scale != null) fd.append('scale', String(options.scale))
+  if (options.prompt) fd.append('prompt', options.prompt)
+  if (options.model) fd.append('model', options.model)
+  if (options.regions != null) fd.append('regions', JSON.stringify(options.regions))
+  return fd
+}
+
+// 返回图像的 AI 能力统一以 response=json 取回 base64
+function aiImageRequest(url: string, file: File, options: AIOptions) {
+  const fd = buildAIFormData(file, options)
+  fd.append('response', 'json')
+  return http.post<ApiResponse<AIProcessedImage>>(url, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+    timeout: 180000,
+  })
 }
 
 // 管理员相关API

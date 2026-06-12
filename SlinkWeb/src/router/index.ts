@@ -5,6 +5,8 @@ import InitSetup from '../components/InitSetup.vue'
 
 import UploadPage from '../components/user/UploadPage.vue'
 import WatermarkPage from '../components/user/WatermarkPage.vue'
+import ImageToolsPage from '../components/user/ImageToolsPage.vue'
+import AIToolsPage from '../components/user/AIToolsPage.vue'
 import Dashboard from '../components/user/Dashboard.vue'
 import MyImages from '../components/user/MyImages.vue'
 import BasicSettings from '../components/user/BasicSettings.vue'
@@ -46,6 +48,16 @@ const router = createRouter({
           path: 'watermark',
           name: 'admin-watermark',
           component: WatermarkPage,
+        },
+        {
+          path: 'image-tools',
+          name: 'admin-image-tools',
+          component: ImageToolsPage,
+        },
+        {
+          path: 'ai-tools',
+          name: 'admin-ai-tools',
+          component: AIToolsPage,
         },
         {
           path: 'dashboard',
