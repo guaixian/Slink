@@ -5,6 +5,8 @@ import InitSetup from '../components/InitSetup.vue'
 
 import UploadPage from '../components/user/UploadPage.vue'
 import WatermarkPage from '../components/user/WatermarkPage.vue'
+import ImageToolsPage from '../components/user/ImageToolsPage.vue'
+import AIToolsPage from '../components/user/AIToolsPage.vue'
 import Dashboard from '../components/user/Dashboard.vue'
 import MyImages from '../components/user/MyImages.vue'
 import BasicSettings from '../components/user/BasicSettings.vue'
@@ -13,6 +15,7 @@ import ApiReference from '../components/user/ApiReference.vue'
 import ImageManagement from '../components/admin/ImageManagement.vue'
 import SystemConsole from '../components/admin/SystemConsole.vue'
 import SystemSettings from '../components/admin/SystemSettings.vue'
+import AISettings from '../components/admin/AISettings.vue'
 import UploadPolicySettings from '../components/admin/UploadPolicySettings.vue'
 import StorageStrategy from '../components/admin/StorageStrategy.vue'
 import StorageStrategyEdit from '../components/admin/StorageStrategyEdit.vue'
@@ -46,6 +49,16 @@ const router = createRouter({
           path: 'watermark',
           name: 'admin-watermark',
           component: WatermarkPage,
+        },
+        {
+          path: 'image-tools',
+          name: 'admin-image-tools',
+          component: ImageToolsPage,
+        },
+        {
+          path: 'ai-tools',
+          name: 'admin-ai-tools',
+          component: AIToolsPage,
         },
         {
           path: 'dashboard',
@@ -101,6 +114,11 @@ const router = createRouter({
           path: 'settings',
           name: 'admin-settings',
           component: SystemSettings,
+        },
+        {
+          path: 'ai-settings',
+          name: 'admin-ai-settings',
+          component: AISettings,
         },
       ],
     },

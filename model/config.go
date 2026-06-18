@@ -135,16 +135,34 @@ var defaultConfigs = []Config{
 	{ConfigKey: "antihotlink_allow_empty", Value: "true", Description: "是否允许空Referer"},
 }
 
-// InitDefaultConfigs 检查并初始化默认配置
+// InitDefaultConfigs 检查并初始化默认配置。
+// 首次安装（表为空）写入全部默认项；随后幂等补齐任何缺失的键，
+// 使已有安装在版本升级后也能获得新增配置项（如 AI 设置）。
 func InitDefaultConfigs(db *gorm.DB) error {
 	var count int64
 	db.Model(&Config{}).Count(&count)
 	if count == 0 {
 		for _, cfg := range defaultConfigs {
-			if err := db.Create(&cfg).Error; err != nil {
+			c := cfg
+			if err := db.Create(&c).Error; err != nil {
 				return err
 			}
 		}
+	} else {
+		// 已有数据：仅补齐缺失键，不覆盖管理员已改的值
+		for _, cfg := range defaultConfigs {
+			var n int64
+			if err := db.Model(&Config{}).Where("config_key = ?", cfg.ConfigKey).Count(&n).Error; err != nil {
+				return err
+			}
+			if n == 0 {
+				c := cfg
+				if err := db.Create(&c).Error; err != nil {
+					return err
+				}
+			}
+		}
 	}
-	return nil
+	// 幂等补齐 AI 配置项
+	return EnsureAIConfigDefaults(db)
 }

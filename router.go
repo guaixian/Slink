@@ -90,6 +90,20 @@ func configureImageRoutes(apiGroup *gin.RouterGroup) {
 		imgGroup.GET("/:id/qrcode-base64", api.GenerateQRCodeBase64)
 		imgGroup.GET("/config", api.GetUserGroupConfig)
 		imgGroup.GET("/rate-limit", api.GetRateLimitInfo)
+
+		// 本地图片处理（纯Go，无外部依赖）：压缩/格式转换/高质量缩放放大/缩略图
+		imgGroup.POST("/process", api.ProcessImage)
+		imgGroup.GET("/process/capabilities", api.GetProcessCapabilities)
+
+		// AI 图片处理（外置扩展，依赖外部服务）：智能去水印/超分辨率/智能打标
+		// 未配置 SLINK_AI_ENDPOINT 时相关接口返回 501 并说明对接方式
+		aiGroup := imgGroup.Group("/ai")
+		{
+			aiGroup.GET("/status", api.AIStatus)
+			aiGroup.POST("/dewatermark", api.AIDewatermark)
+			aiGroup.POST("/upscale", api.AIUpscale)
+			aiGroup.POST("/tag", api.AITag)
+		}
 	}
 }
 
@@ -151,6 +165,11 @@ func configureAdminRoutes(apiGroup *gin.RouterGroup) {
 
 		// 系统统计信息
 		adminGroup.GET("/stats", api.GetSystemStats)
+
+		// AI 设置（图像扩展/LLM/Embedding 平台与密钥），含连接测试
+		adminGroup.GET("/ai-settings", api.GetAISettings)
+		adminGroup.PUT("/ai-settings", api.UpdateAISettings)
+		adminGroup.POST("/ai-settings/test", api.TestAISettings)
 
 		// 多用户/用户组相关接口已移除（个人图床）
 	}

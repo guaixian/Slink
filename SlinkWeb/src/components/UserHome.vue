@@ -29,6 +29,18 @@
             <span>图片水印</span>
           </router-link>
         </li>
+        <li class="nav-item" :class="{ active: $route.name === 'admin-image-tools' }">
+          <router-link to="/admin/image-tools" class="flex items-center">
+            <i class="fa fa-magic mr-3"></i>
+            <span>图片处理</span>
+          </router-link>
+        </li>
+        <li class="nav-item" :class="{ active: $route.name === 'admin-ai-tools' }">
+          <router-link to="/admin/ai-tools" class="flex items-center">
+            <i class="fa fa-flask mr-3"></i>
+            <span>AI 处理</span>
+          </router-link>
+        </li>
         <li class="nav-item" :class="{ active: $route.name === 'admin-dashboard' }">
           <router-link to="/admin/dashboard" class="flex items-center">
             <i class="fa fa-tachometer mr-3"></i>
@@ -80,6 +92,12 @@
           <router-link to="/admin/settings" class="flex items-center">
             <i class="fa fa-cogs mr-3"></i>
             <span>系统设置</span>
+          </router-link>
+        </li>
+        <li class="nav-item" :class="{ active: $route.name === 'admin-ai-settings' }">
+          <router-link to="/admin/ai-settings" class="flex items-center">
+            <i class="fa fa-flask mr-3"></i>
+            <span>AI 设置</span>
           </router-link>
         </li>
         <li class="nav-item" :class="{ active: $route.name === 'admin-storage' || $route.name === 'admin-storage-create' || $route.name === 'admin-storage-edit' }">
@@ -204,6 +222,10 @@ const pageTitle = computed(() => {
       return '上传图片'
     case 'admin-watermark':
       return '图片水印'
+    case 'admin-image-tools':
+      return '图片处理'
+    case 'admin-ai-tools':
+      return 'AI 处理'
     case 'admin-image-management':
       return '图片管理'
     case 'admin-console':
@@ -212,6 +234,8 @@ const pageTitle = computed(() => {
       return '上传策略'
     case 'admin-settings':
       return '系统设置'
+    case 'admin-ai-settings':
+      return 'AI 设置'
     case 'admin-storage':
     case 'admin-storage-create':
     case 'admin-storage-edit':
