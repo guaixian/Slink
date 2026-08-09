@@ -52,10 +52,9 @@ func InitPostgreSQL(config *DBConfig) (*gorm.DB, error) {
 		return nil, fmt.Errorf("连接数据库失败: %w", err)
 	}
 
-	// 执行SQL初始化脚本
-	if err := executeSQLFile(db, "postgresql"); err != nil {
-		return nil, err
-	}
-
+	// 不再执行旧版 sql/postgresql.sql:其表结构与 GORM 模型已漂移
+	//(缺 policy_group_id 列、email 唯一约束名与 uniqueIndex 冲突会导致
+	// AutoMigrate DROP CONSTRAINT uni_users_email 失败),表结构统一由
+	// migrateAllTables 的 AutoMigrate 创建/演进。
 	return db, nil
 }

@@ -73,7 +73,12 @@ func sqliteRenameColumnIfNeeded(db *gorm.DB, table, from, to string) error {
 // 连接到SQLite数据库文件，如果文件不存在则创建
 // SQLite使用GORM AutoMigrate自动创建表结构
 func InitSQLite(config *DBConfig) (*gorm.DB, error) {
-	db, err := gorm.Open(sqlite.Open(config.DBName), &gorm.Config{})
+	dsn := config.DBName
+	// WAL + busy_timeout:提升并发读写下的表现（上传压测 c=30 的尾延迟主要来自单写锁）
+	if dsn != ":memory:" && !strings.Contains(dsn, "?") {
+		dsn += "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=synchronous(NORMAL)"
+	}
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	if err != nil {
 		return nil, fmt.Errorf("连接SQLite数据库失败: %w", err)
 	}

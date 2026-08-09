@@ -103,8 +103,8 @@ func JWTOrBearerAuthMiddleware() gin.HandlerFunc {
 			c.Set("userID", claims.UserID)
 			c.Set("email", claims.Email)
 
-			// 获取用户信息以确定是否为管理员
-			user, err := model.GetUserByID(model.DB, claims.UserID)
+			// 获取用户信息以确定是否为管理员（带短缓存，避免每请求查库）
+			user, err := GetCachedUser(claims.UserID)
 			if err == nil {
 				c.Set("isAdmin", user.IsAdmin)
 			}

@@ -1,7 +1,6 @@
 package middleware
 
 import (
-	"Slink/model"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
@@ -19,7 +18,7 @@ func AdminAuthMiddleware() gin.HandlerFunc {
 			return
 		}
 
-		user, err := model.GetUserByID(model.DB, userID.(uint))
+		user, err := GetCachedUser(userID.(uint))
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "获取用户信息失败"})
 			c.Abort()

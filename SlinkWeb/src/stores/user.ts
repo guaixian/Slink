@@ -26,6 +26,10 @@ export const useUserStore = defineStore('user', () => {
   const isLoading = ref(false)
   const systemConfig = ref<any[]>([])
   const isSystemConfigLoaded = ref(false)
+  // 用户信息上次成功拉取时间：路由守卫每次跳转都会调用 getUserInfo，
+  // TTL 内直接复用，避免每次页面切换都打一次 /api/user/info
+  const lastUserInfoAt = ref(0)
+  const USER_INFO_TTL = 60_000
 
   // 计算属性
   const token = computed(() => userInfo.value?.token || '')
@@ -202,11 +206,16 @@ export const useUserStore = defineStore('user', () => {
   const logout = () => {
     userInfo.value = null
     isLoggedIn.value = false
+    lastUserInfoAt.value = 0
     clearTokenFromStorage()
   }
 
   // 获取用户信息
-  const getUserInfo = async (): Promise<ApiResponse<UserInfo>> => {
+  const getUserInfo = async (force: boolean = false): Promise<ApiResponse<UserInfo>> => {
+    // TTL 内且已有完整用户信息时直接复用（路由切换高频调用此函数）
+    if (!force && userInfo.value?.user_id && Date.now() - lastUserInfoAt.value < USER_INFO_TTL) {
+      return { status: true, message: 'cached', data: userInfo.value }
+    }
     try {
       console.log('开始获取用户信息...')
       const response = await http.get<any>('/api/user/info')
@@ -231,6 +240,7 @@ export const useUserStore = defineStore('user', () => {
 
         console.log('构建的新userInfo:', JSON.stringify(newUserInfo, null, 2))
         userInfo.value = newUserInfo
+        lastUserInfoAt.value = Date.now()
 
         isLoggedIn.value = true
         console.log('用户信息设置完成')

@@ -246,11 +246,22 @@ func saveCacheConfig(cacheType, cachePath string, redisHost string, redisPort in
 }
 
 // LoadCacheConfig 加载缓存配置（支持Redis参数）
+// 优先级：config/cache.json > 环境变量（容器部署）> 默认内存缓存
 func LoadCacheConfig() (map[string]string, error) {
 	configFile := "config/cache.json"
 
-	// 如果配置文件不存在，返回默认配置
+	// 如果配置文件不存在，尝试环境变量（Docker/容器部署场景）
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
+		if cacheType := strings.TrimSpace(os.Getenv("CACHE_TYPE")); cacheType != "" {
+			return map[string]string{
+				"type":           cacheType,
+				"path":           os.Getenv("CACHE_PATH"),
+				"redis_host":     os.Getenv("REDIS_HOST"),
+				"redis_port":     os.Getenv("REDIS_PORT"),
+				"redis_password": os.Getenv("REDIS_PASSWORD"),
+				"redis_db":       os.Getenv("REDIS_DB"),
+			}, nil
+		}
 		return map[string]string{
 			"type": "memory",
 			"path": "",

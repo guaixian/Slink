@@ -423,6 +423,9 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 
+	// 权限可能已变化，立即使鉴权中间件的用户缓存失效
+	middleware.InvalidateUserCache(existing.ID)
+
 	c.JSON(http.StatusOK, gin.H{
 		"status":  true,
 		"message": "更新成功",
@@ -470,6 +473,8 @@ func DeleteUser(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除用户失败"})
 		return
 	}
+
+	middleware.InvalidateUserCache(uint(userID))
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  true,

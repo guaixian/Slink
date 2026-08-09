@@ -1,0 +1,68 @@
+# Postgres + Redis 全量部署编排（在 Dockerfile 基础上组合）
+# 用法:
+#   1. cd SlinkWeb && pnpm install && pnpm build   # 先构建前端
+#   2. cp .env.example .env 并按需修改(至少设置 SLINK_JWT_SECRET)
+#   3. docker compose -f docker-compose.postgres.yml --env-file .env up -d --build
+#   4. 打开 http://localhost:8080 完成初始化向导:
+#      数据库类型选 postgres,主机 postgres,端口 5432,用户/密码见下方 POSTGRES_*,
+#      缓存选 redis,主机 redis,端口 6379
+# 初始化会把 config/database.json 与 config/cache.json 写入挂载卷,重启后生效不变。
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-slink}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env file}
+      POSTGRES_DB: ${POSTGRES_DB:-slink}
+    volumes:
+      - ${SLINK_DATA_ROOT:-./docker-data}/pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  redis:
+    image: redis:8-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - ${SLINK_DATA_ROOT:-./docker-data}/redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  slink:
+    build: .
+    ports:
+      - "${SLINK_PORT:-8080}:8080"
+    environment:
+      GIN_MODE: release
+      # 必设长随机串;可用 openssl rand -base64 48
+      SLINK_JWT_SECRET: ${SLINK_JWT_SECRET:?set SLINK_JWT_SECRET in .env file}
+      SLINK_ADDR: ":8080"
+      # 数据库:初始化向导写入 config/database.json 后以其为准;以下 env 用于首次启动
+      DB_TYPE: postgres
+      DB_HOST: postgres
+      DB_PORT: "5432"
+      DB_USER: ${POSTGRES_USER:-slink}
+      DB_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env file}
+      DB_NAME: ${POSTGRES_DB:-slink}
+      DB_SSLMODE: disable
+      # 缓存:无 config/cache.json 时由 env 生效(容器场景)
+      CACHE_TYPE: redis
+      REDIS_HOST: redis
+      REDIS_PORT: "6379"
+    volumes:
+      - ${SLINK_DATA_ROOT:-./docker-data}/config:/app/config
+      - ${SLINK_DATA_ROOT:-./docker-data}/data:/app/data
+      - ${SLINK_DATA_ROOT:-./docker-data}/static:/app/static
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped

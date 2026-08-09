@@ -148,6 +148,12 @@ func GetUserUploadPolicyGroup(db *gorm.DB, userID uint) (*UploadPolicyGroup, err
 	if err != nil {
 		return nil, err
 	}
+	return GetUploadPolicyGroupOfUser(db, user)
+}
+
+// GetUploadPolicyGroupOfUser 同 GetUserUploadPolicyGroup，但直接接受已查出的用户，
+// 避免在已持有 user 对象的热路径（上传）上重复查询 users 表
+func GetUploadPolicyGroupOfUser(db *gorm.DB, user *User) (*UploadPolicyGroup, error) {
 	// 如果用户有分配策略组，使用用户的策略组
 	if user.PolicyGroupID > 0 {
 		pg, err := GetUploadPolicyGroupByID(db, user.PolicyGroupID)

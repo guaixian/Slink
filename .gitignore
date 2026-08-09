@@ -15,3 +15,4 @@ slink.exe
 # 日志
 *.log
 applog/*.log
+docker-data/

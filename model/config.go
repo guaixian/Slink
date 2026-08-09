@@ -3,6 +3,7 @@ package model
 import (
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
@@ -74,21 +75,57 @@ func DeleteConfigByKey(db *gorm.DB, key string) error {
 	return db.Where("config_key = ?", key).Delete(&Config{}).Error
 }
 
+// configCache 配置读取短缓存：图片访问等热路径每请求会读多次配置
+//（如防盗链开关），直连 Postgres/MySQL 时每次往返都要毫秒级，5 秒缓存可消除。
+type configCacheEntry struct {
+	value string
+	found bool
+	at    time.Time
+}
+
+var (
+	configCache    sync.Map // key: string(configKey)
+	configCacheTTL = 5 * time.Second
+)
+
+// InvalidateConfigCache 使配置缓存失效（配置更新时调用）
+func InvalidateConfigCache(key string) {
+	if key == "" {
+		configCache.Range(func(k, _ any) bool { configCache.Delete(k); return true })
+		return
+	}
+	configCache.Delete(key)
+}
+
 // GetConfigValue 通过 key 获取配置值（用 Find 而非 First，避免键不存在时 GORM 打印 record not found）
 func GetConfigValue(db *gorm.DB, key string) (string, error) {
+	if v, ok := configCache.Load(key); ok {
+		e := v.(configCacheEntry)
+		if time.Since(e.at) < configCacheTTL {
+			if !e.found {
+				return "", gorm.ErrRecordNotFound
+			}
+			return e.value, nil
+		}
+		configCache.Delete(key)
+	}
+
 	var cfg Config
 	res := db.Where("config_key = ?", key).Limit(1).Find(&cfg)
 	if res.Error != nil {
 		return "", res.Error
 	}
 	if res.RowsAffected == 0 {
+		configCache.Store(key, configCacheEntry{found: false, at: time.Now()})
 		return "", gorm.ErrRecordNotFound
 	}
+	configCache.Store(key, configCacheEntry{value: cfg.Value, found: true, at: time.Now()})
 	return cfg.Value, nil
 }
 
 // SetConfigValue 设置配置值
 func SetConfigValue(db *gorm.DB, key string, value string) error {
+	InvalidateConfigCache(key)
 	var cfg Config
 	res := db.Where("config_key = ?", key).Limit(1).Find(&cfg)
 	if res.Error != nil {
@@ -111,6 +148,7 @@ func DeleteConfig(db *gorm.DB, id uint) error {
 
 // UpdateConfigs 批量更新配置
 func UpdateConfigs(db *gorm.DB, configs []Config) error {
+	InvalidateConfigCache("") // 全部失效
 	for _, cfg := range configs {
 		err := db.Model(&Config{}).Where("config_key = ?", cfg.ConfigKey).Updates(Config{Value: cfg.Value, Description: cfg.Description}).Error
 		if err != nil {

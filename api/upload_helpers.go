@@ -190,7 +190,7 @@ func attemptDedupUpload(c *gin.Context, md5Str string, userID uint, originName s
 
 // resolveUploadStrategy 解析本次上传使用的存储策略
 // 优先使用请求中指定的 strategy_id，其次查用户分配的策略(UserStrategy表)，再回退到用户偏好中的 default_strategy，最后用第一个可用策略
-func resolveUploadStrategy(db *gorm.DB, userID uint, userConfig model.UserConfig, strategyIDRaw string) (*model.Strategies, *model.StrategyConfigData, error) {
+func resolveUploadStrategy(db *gorm.DB, user *model.User, userConfig model.UserConfig, strategyIDRaw string) (*model.Strategies, *model.StrategyConfigData, error) {
 	// 1. 解析请求中指定的 strategy_id
 	var requestedSID uint
 	if strategyIDRaw != "" {
@@ -207,18 +207,12 @@ func resolveUploadStrategy(db *gorm.DB, userID uint, userConfig model.UserConfig
 		return nil, nil, fmt.Errorf("未配置存储策略")
 	}
 
-	// 2. 获取用户分配的策略列表
-	userStrategyIDs, _ := model.GetStrategyIDsByUserID(db, userID)
-
-	// 构建可用策略ID集合（用户分配的策略，或全部策略如果是管理员/无分配记录）
-	isAdmin := false
-	if u, err := model.GetUserByID(db, userID); err == nil && u.IsAdmin == 1 {
-		isAdmin = true
-	}
+	// 2. 获取用户分配的策略列表（用户对象由调用方传入，避免重复查询 users 表）
+	userStrategyIDs, _ := model.GetStrategyIDsByUserID(db, user.ID)
 
 	// 管理员可以看到所有策略；普通用户只能看到分配给他们的策略
 	availableIDs := make(map[uint]bool)
-	if isAdmin || len(userStrategyIDs) == 0 {
+	if user.IsAdmin == 1 || len(userStrategyIDs) == 0 {
 		for i := range all {
 			availableIDs[all[i].ID] = true
 		}
@@ -323,9 +317,10 @@ func readGlobalUploadPolicy(c *gin.Context) (*model.GroupConfig, bool) {
 }
 
 // readUserUploadPolicy 读取用户所属上传策略组的配置（优先用户策略组，否则默认策略组，否则全局策略）
-func readUserUploadPolicy(c *gin.Context, userID uint) (*model.GroupConfig, bool) {
+// 直接接受已查出的 user，避免热路径重复查询 users 表
+func readUserUploadPolicy(c *gin.Context, user *model.User) (*model.GroupConfig, bool) {
 	// 优先：用户所属上传策略组
-	pg, err := model.GetUserUploadPolicyGroup(model.DB, userID)
+	pg, err := model.GetUploadPolicyGroupOfUser(model.DB, user)
 	if err == nil && pg != nil {
 		return pg.ToGroupConfig(), true
 	}

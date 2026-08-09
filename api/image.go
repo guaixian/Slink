@@ -71,7 +71,7 @@ func UploadImage(c *gin.Context) {
 		return
 	}
 
-	policy, ok := readUserUploadPolicy(c, userID.(uint))
+	policy, ok := readUserUploadPolicy(c, user)
 	if !ok {
 		return
 	}
@@ -134,7 +134,7 @@ func UploadImage(c *gin.Context) {
 		return
 	}
 
-	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, c.PostForm("strategy_id"))
+	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, user, userConfig, c.PostForm("strategy_id"))
 	if err != nil {
 		applog.Logger.Error("upload: resolve strategy failed", "request_id", rid, "handler", "UploadImage", "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -243,7 +243,7 @@ func UploadImageFromURL(c *gin.Context) {
 		return
 	}
 
-	policy, ok := readUserUploadPolicy(c, userID.(uint))
+	policy, ok := readUserUploadPolicy(c, user)
 	if !ok {
 		return
 	}
@@ -322,7 +322,7 @@ func UploadImageFromURL(c *gin.Context) {
 	if requestData.StrategyID > 0 {
 		strategyIDRaw = strconv.Itoa(requestData.StrategyID)
 	}
-	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, strategyIDRaw)
+	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, user, userConfig, strategyIDRaw)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
