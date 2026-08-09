@@ -104,13 +104,22 @@
         <i class="fa fa-chevron-right"></i>
       </button>
     </div>
+
+    <!-- 页内最大化预览（不新开标签页） -->
+    <ImagePreviewModal
+      v-if="preview.show"
+      :url="preview.url"
+      :name="preview.name"
+      @close="preview.show = false"
+    />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { imageAPI } from '../../api'
 import PageLayout from '../admin/PageLayout.vue'
+import ImagePreviewModal from '../common/ImagePreviewModal.vue'
 import { useMessage } from '../../composables/useMessage'
 
 // 响应式数据
@@ -132,6 +141,13 @@ const contextMenu = ref({
   x: 0,
   y: 0,
   image: null as any
+})
+
+// 页内预览
+const preview = ref({
+  show: false,
+  url: '',
+  name: ''
 })
 
 // 过滤后的图片
@@ -201,9 +217,13 @@ const hideContextMenu = () => {
 // 页面初始化
 onMounted(() => {
   loadImages()
-  
+
   // 添加全局点击事件来隐藏右键菜单
   document.addEventListener('click', hideContextMenu)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', hideContextMenu)
 })
 
 // 搜索处理
@@ -212,14 +232,18 @@ const handleSearch = () => {
   console.log('搜索关键词:', searchKeyword.value)
 }
 
-// 图片点击处理
+// 图片点击处理：当前页最大化预览
 const handleImageClick = (image: any) => {
-  console.log('点击图片:', image)
+  handleView(image)
 }
 
-// 查看图片
+// 查看图片：页内浮层最大化预览，可关闭，不新开标签页
 const handleView = (image: any) => {
-  window.open(fixImageUrl(image.links.url), '_blank')
+  preview.value = {
+    show: true,
+    url: fixImageUrl(image.links?.url || ''),
+    name: image.origin_name || ''
+  }
 }
 
 // 复制链接

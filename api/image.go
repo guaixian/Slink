@@ -115,6 +115,14 @@ func UploadImage(c *gin.Context) {
 		userConfig = model.GetDefaultUserConfig()
 	}
 
+	// 落盘前按内容 MD5 去重：重复图片只建引用记录，不再写入存储
+	if md5Str, herr := hashMultipartFileMD5(file); herr == nil {
+		if attemptDedupUpload(c, md5Str, userID.(uint), file.Filename, userConfig) {
+			applog.Logger.Info("upload: dedup hit (pre-save)", "request_id", rid, "handler", "UploadImage", "user_id", userID, "md5", md5Str)
+			return
+		}
+	}
+
 	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, c.PostForm("strategy_id"))
 	if err != nil {
 		applog.Logger.Error("upload: resolve strategy failed", "request_id", rid, "handler", "UploadImage", "user_id", userID, "error", err)
@@ -287,6 +295,11 @@ func UploadImageFromURL(c *gin.Context) {
 	userConfig, err := user.GetUserConfig()
 	if err != nil {
 		userConfig = model.GetDefaultUserConfig()
+	}
+
+	// 落盘前按内容 MD5 去重：重复图片只建引用记录，不再写入存储
+	if attemptDedupUpload(c, hashBytesMD5(imageData), userID.(uint), filename, userConfig) {
+		return
 	}
 
 	strategyIDRaw := ""

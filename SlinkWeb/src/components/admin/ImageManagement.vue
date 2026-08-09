@@ -156,6 +156,14 @@
         </div>
       </div>
     </div>
+
+    <!-- 页内最大化预览（不新开标签页） -->
+    <ImagePreviewModal
+      v-if="preview.show"
+      :url="preview.url"
+      :name="preview.name"
+      @close="preview.show = false"
+    />
   </PageLayout>
 </template>
 
@@ -164,6 +172,7 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { adminAPI, imageAPI } from '../../api'
 import { useMessage } from '../../composables/useMessage'
 import PageLayout from './PageLayout.vue'
+import ImagePreviewModal from '../common/ImagePreviewModal.vue'
 
 const KNOWN_MIMES = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'image/svg+xml', 'image/bmp']
 
@@ -186,6 +195,9 @@ const renameOpen = ref(false)
 const renameTarget = ref<AdminImage | null>(null)
 const renameValue = ref('')
 const renameSaving = ref(false)
+
+// 页内预览
+const preview = ref({ show: false, url: '', name: '' })
 
 const { toast, confirm } = useMessage()
 
@@ -377,10 +389,10 @@ watch(
   }
 )
 
-// 图片点击处理
+// 图片点击处理：当前页最大化预览，可关闭，不新开标签页
 const handleImageClick = (image: AdminImage) => {
-  const openUrl = image.url || resolveDisplaySrc(image.pathname ? `/static/${image.pathname.replace(/^static\//, '')}` : '')
-  if (openUrl) window.open(openUrl, '_blank')
+  const url = image.url || resolveDisplaySrc(image.pathname ? `/static/${image.pathname.replace(/^static\//, '')}` : '')
+  preview.value = { show: true, url, name: image.name || image.pathname }
 }
 
 const handleView = (image: AdminImage) => {

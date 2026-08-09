@@ -3,8 +3,11 @@ package api
 import (
 	"Slink/model"
 	"Slink/utils"
+	"crypto/md5"
+	"encoding/hex"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -68,6 +71,98 @@ func fetchRemoteImage(rawURL string, maxSizeKB uint) ([]byte, string, error) {
 	return data, contentType, nil
 }
 
+
+// hashBytesMD5 计算字节数据的 MD5（URL 上传的内存数据去重用）
+func hashBytesMD5(data []byte) string {
+	sum := md5.Sum(data)
+	return hex.EncodeToString(sum[:])
+}
+
+// hashMultipartFileMD5 流式计算上传文件的 MD5，用于落盘前的去重判断
+func hashMultipartFileMD5(file *multipart.FileHeader) (string, error) {
+	src, err := file.Open()
+	if err != nil {
+		return "", err
+	}
+	defer src.Close()
+	h := md5.New()
+	if _, err := io.Copy(h, src); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
+}
+
+// writeUploadSuccess 统一的上传成功响应
+func writeUploadSuccess(c *gin.Context, rec *model.Images, originName string, sizeMB float64, links map[string]string) {
+	c.JSON(http.StatusOK, &UploadImageResponse{
+		Status:  true,
+		Message: "上传成功",
+		Data: &ImageData{
+			ID:         rec.ID,
+			Pathname:   normalizePathnameForLinks(rec.Path),
+			OriginName: originName,
+			Size:       sizeMB,
+			Mimetype:   rec.Mimetype,
+			MD5:        rec.Md5,
+			SHA1:       rec.SHA1,
+			Links:      links,
+		},
+	})
+}
+
+// attemptDedupUpload 落盘前按内容 MD5 去重。
+// 命中已有原始图片时：不再写入存储，仅创建一条引用记录（RefImageID 指向原始图，
+// 与原始图共享同一存储路径/URL），完成响应并返回 true；未命中返回 false 继续正常上传流程。
+func attemptDedupUpload(c *gin.Context, md5Str string, userID uint, originName string, userConfig model.UserConfig) bool {
+	if md5Str == "" {
+		return false
+	}
+	existing, err := checkMD5Duplicate(model.DB, md5Str)
+	if err != nil || existing == nil {
+		return false
+	}
+
+	refID := existing.ID
+	rec := &model.Images{
+		UserID:      userID,
+		GroupID:     model.EffectiveImageGroupID(model.DB),
+		StrategyID:  existing.StrategyID,
+		ImageKey:    existing.ImageKey,
+		Path:        existing.Path,
+		Name:        existing.Name,
+		OriginName:  originName,
+		Size:        existing.Size,
+		Mimetype:    existing.Mimetype,
+		Extension:   existing.Extension,
+		Md5:         existing.Md5,
+		SHA1:        existing.SHA1,
+		Width:       existing.Width,
+		Height:      existing.Height,
+		Permissions: uint(userConfig.DefaultPermission),
+		IsUnhealthy: 0,
+		UploadIp:    c.ClientIP(),
+		RefImageID:  &refID,
+	}
+	model.SetImagePermissionFromUserConfig(rec, userConfig)
+
+	if err := model.CreateImage(model.DB, rec); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片记录失败"})
+		return true
+	}
+	if err := model.IncrementUserImageCount(model.DB, userID); err != nil {
+		// 计数失败不影响上传结果
+	}
+
+	utilsConfig, err := strategyUtilsConfigForStoredImage(model.DB, existing)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取存储策略失败"})
+		return true
+	}
+	pathname := normalizePathnameForLinks(existing.Path)
+	links := utils.GenerateImageLinksWithConfig(pathname, originName, utilsConfig)
+	writeUploadSuccess(c, rec, originName, float64(existing.Size)/(1024*1024), links)
+	return true
+}
 
 // resolveUploadStrategy 解析本次上传使用的存储策略
 // 优先使用请求中指定的 strategy_id，其次查用户分配的策略(UserStrategy表)，再回退到用户偏好中的 default_strategy，最后用第一个可用策略
