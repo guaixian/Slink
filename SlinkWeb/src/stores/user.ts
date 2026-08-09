@@ -36,32 +36,32 @@ export const useUserStore = defineStore('user', () => {
   
   // 系统配置相关计算属性
   const isEmailVerificationEnabled = computed(() => {
-    const emailVerifyConfig = systemConfig.value.find(config => config.Key === 'email_verify')
+    const emailVerifyConfig = systemConfig.value.find(config => config.ConfigKey === 'email_verify')
     return emailVerifyConfig?.Value === 'true'
   })
   
   const isRegisterEnabled = computed(() => {
-    const registerConfig = systemConfig.value.find(config => config.Key === 'enable_register')
+    const registerConfig = systemConfig.value.find(config => config.ConfigKey === 'enable_register')
     return registerConfig?.Value === 'true'
   })
   
   const isGalleryEnabled = computed(() => {
-    const galleryConfig = systemConfig.value.find(config => config.Key === 'enable_gallery')
+    const galleryConfig = systemConfig.value.find(config => config.ConfigKey === 'enable_gallery')
     return galleryConfig?.Value === 'true'
   })
   
   const isApiEnabled = computed(() => {
-    const apiConfig = systemConfig.value.find(config => config.Key === 'enable_api')
+    const apiConfig = systemConfig.value.find(config => config.ConfigKey === 'enable_api')
     return apiConfig?.Value === 'true'
   })
   
   const isGuestUploadEnabled = computed(() => {
-    const guestUploadConfig = systemConfig.value.find(config => config.Key === 'guest_upload')
+    const guestUploadConfig = systemConfig.value.find(config => config.ConfigKey === 'guest_upload')
     return guestUploadConfig?.Value === 'true'
   })
   
   const defaultStorageGB = computed(() => {
-    const storageConfig = systemConfig.value.find(config => config.Key === 'default_storage_gb')
+    const storageConfig = systemConfig.value.find(config => config.ConfigKey === 'default_storage_gb')
     return storageConfig?.Value ? parseInt(storageConfig.Value) : 5
   })
 
@@ -184,6 +184,20 @@ export const useUserStore = defineStore('user', () => {
     }
   }
 
+  // 直接设置登录数据（用于注册后自动登录）
+  const setLoginData = (token: string, userId: number, account: string, name: string) => {
+    userInfo.value = {
+      user_id: userId,
+      account,
+      name,
+      group_id: 1,
+      is_admin: false,
+      token
+    } as UserInfo
+    isLoggedIn.value = true
+    saveTokenToStorage(token)
+  }
+
   // 登出
   const logout = () => {
     userInfo.value = null
@@ -239,9 +253,9 @@ export const useUserStore = defineStore('user', () => {
     try {
       const response = await http.put<ApiResponse<UserInfo>>('/api/user/info', userData)
       if (response.data.status) {
-        userInfo.value = response.data.data
-        // 只保存token，不保存其他信息
-        saveTokenToStorage(response.data.data.token)
+        // 后端 /api/user/info 不返回 token，需保留本地现有 token，避免被 undefined 覆盖
+        const currentToken = userInfo.value?.token || localStorage.getItem('token') || ''
+        userInfo.value = { ...response.data.data, token: currentToken }
       }
       return response.data
     } catch (error: any) {
@@ -278,6 +292,7 @@ export const useUserStore = defineStore('user', () => {
     register,
     sendVerificationCode,
     logout,
+    setLoginData,
     getUserInfo,
     updateUserInfo,
     getSystemInfo,

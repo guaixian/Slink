@@ -7,7 +7,6 @@ import (
 	"Slink/storage"
 	"Slink/utils"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -52,7 +51,7 @@ func UploadImageV2(c *gin.Context) {
 		return
 	}
 
-	policy, ok := readGlobalUploadPolicy(c)
+	policy, ok := readUserUploadPolicy(c, userID.(uint))
 	if !ok {
 		return
 	}
@@ -96,7 +95,7 @@ func UploadImageV2(c *gin.Context) {
 		userConfig = model.GetDefaultUserConfig()
 	}
 
-	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userConfig, c.PostForm("strategy_id"))
+	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, c.PostForm("strategy_id"))
 	if err != nil {
 		applog.Logger.Error("upload v2: resolve strategy failed", "request_id", rid, "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -141,8 +140,9 @@ func UploadImageV2(c *gin.Context) {
 	// 根据用户配置设置图片权限
 	model.SetImagePermissionFromUserConfig(imageRecord, userConfig)
 
-	// 保存到数据库
-	if err := model.CreateImage(model.DB, imageRecord); err != nil {
+	// 保存到数据库（含MD5去重）
+	imageRecord, isDup, err := createImageRecordWithDedup(imageRecord)
+	if err != nil {
 		applog.Logger.Error("upload v2: db insert failed", "request_id", rid, "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片记录失败"})
 		return
@@ -153,9 +153,6 @@ func UploadImageV2(c *gin.Context) {
 		applog.Logger.Warn("upload v2: increment image count failed", "request_id", rid, "user_id", userID, "error", err)
 	}
 
-	applog.Logger.Info("upload v2: success", "request_id", rid, "user_id", userID,
-		"image_id", imageRecord.ID, "pathname", normalizePathnameForLinks(imageInfo.Path), "md5", imageInfo.MD5, "strategy_id", strategy.ID)
-
 	// 生成图片链接
 	utilsConfig := &utils.StrategyConfig{
 		URL:      strategyConfigData.URL,
@@ -164,8 +161,16 @@ func UploadImageV2(c *gin.Context) {
 		AuthType: strategyConfigData.AuthType,
 	}
 
-	pathname := normalizePathnameForLinks(imageInfo.Path)
+	pathname := normalizePathnameForLinks(imageRecord.Path)
 	links := utils.GenerateImageLinksWithConfig(pathname, imageInfo.OriginName, utilsConfig)
+
+	if isDup {
+		applog.Logger.Info("upload v2: dedup hit", "request_id", rid, "user_id", userID,
+			"image_id", imageRecord.ID, "ref_image_id", *imageRecord.RefImageID, "md5", imageInfo.MD5)
+	} else {
+		applog.Logger.Info("upload v2: success", "request_id", rid, "user_id", userID,
+			"image_id", imageRecord.ID, "pathname", pathname, "md5", imageInfo.MD5, "strategy_id", strategy.ID)
+	}
 
 	// 构建响应数据
 	response := &UploadImageResponse{
@@ -203,7 +208,7 @@ func UploadImageFromURLV2(c *gin.Context) {
 		return
 	}
 
-	policy, ok := readGlobalUploadPolicy(c)
+	policy, ok := readUserUploadPolicy(c, userID.(uint))
 	if !ok {
 		return
 	}
@@ -222,37 +227,11 @@ func UploadImageFromURLV2(c *gin.Context) {
 
 	applog.Logger.Info("upload url v2: start", "request_id", rid, "user_id", userID, "remote_url", requestData.URL, "strategy_id", requestData.StrategyID)
 
-	// 下载图片
-	resp, err := http.Get(requestData.URL)
+	// 下载图片（带协议校验、超时与大小限制）
+	imageData, contentType, err := fetchRemoteImage(requestData.URL, policy.MaximumFileSize)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "下载图片失败: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)})
-		return
-	}
-
-	// 检查Content-Type
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "image/") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "URL不是有效的图片"})
-		return
-	}
-
-	// 检查文件大小
-	contentLength := resp.ContentLength
-	if contentLength > int64(policy.MaximumFileSize*1024) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("文件大小超过限制（%dKB）", policy.MaximumFileSize)})
-		return
-	}
-
-	// 读取图片数据
-	imageData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取图片数据失败"})
+		applog.Logger.Warn("upload url v2: fetch failed", "request_id", rid, "user_id", userID, "error", err)
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -296,7 +275,7 @@ func UploadImageFromURLV2(c *gin.Context) {
 	if requestData.StrategyID > 0 {
 		strategyIDRaw = strconv.Itoa(requestData.StrategyID)
 	}
-	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userConfig, strategyIDRaw)
+	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, strategyIDRaw)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -343,7 +322,9 @@ func UploadImageFromURLV2(c *gin.Context) {
 
 	model.SetImagePermissionFromUserConfig(imageRecord, userConfig)
 
-	if err := model.CreateImage(model.DB, imageRecord); err != nil {
+	// 保存到数据库（含MD5去重）
+	imageRecord, _, err = createImageRecordWithDedup(imageRecord)
+	if err != nil {
 		applog.Logger.Error("upload url v2: db insert failed", "request_id", rid, "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片记录失败"})
 		return
@@ -361,7 +342,7 @@ func UploadImageFromURLV2(c *gin.Context) {
 		AuthType: strategyConfigData.AuthType,
 	}
 
-	pathname := normalizePathnameForLinks(imageInfo.Path)
+	pathname := normalizePathnameForLinks(imageRecord.Path)
 	links := utils.GenerateImageLinksWithConfig(pathname, imageInfo.OriginName, utilsConfig)
 
 	applog.Logger.Info("upload url v2: success", "request_id", rid, "user_id", userID,

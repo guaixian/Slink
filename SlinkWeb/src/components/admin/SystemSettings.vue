@@ -65,6 +65,26 @@
             </div>
           </div>
 
+          <!-- 开放注册 -->
+          <div class="setting-item">
+            <div class="setting-info">
+              <div class="setting-title">是否开放注册</div>
+              <div class="setting-description">
+                开启后用户可在首页自行注册账号，新用户自动分配到默认上传策略组。
+              </div>
+            </div>
+            <div class="setting-control">
+              <label class="toggle-switch">
+                <input
+                  type="checkbox"
+                  v-model="settings.enableRegister"
+                  @change="handleSettingChange('enableRegister', $event)"
+                >
+                <span class="toggle-slider"></span>
+              </label>
+            </div>
+          </div>
+
           <!-- 游客上传 -->
           <div class="setting-item">
             <div class="setting-info">
@@ -510,6 +530,7 @@ import { isAxiosError } from 'axios'
 // 设置数据
 const originalSettings = reactive({
   // 功能开关设置
+  enableRegister: false,
   enableGallery: false,
   enableApi: true,
   allowGuestUpload: false,
@@ -547,6 +568,7 @@ const originalSettings = reactive({
 
 const settings = reactive({
   // 功能开关设置
+  enableRegister: false,
   enableGallery: false,
   enableApi: true,
   allowGuestUpload: false,
@@ -617,8 +639,8 @@ const saveSettings = async () => {
   try {
     // 构建请求数据，映射前端字段到后端字段
     const requestData = {
-      // 功能开关设置（个人图床固定关闭注册）
-      enable_register: false,
+      // 功能开关设置
+      enable_register: settings.enableRegister,
       enable_gallery: settings.enableGallery,
       enable_api: settings.enableApi,
       guest_upload: settings.allowGuestUpload,
@@ -742,6 +764,7 @@ const loadSettings = async () => {
       console.log('系统配置数据:', data)
 
       // 更新设置，映射后端字段到前端字段
+      settings.enableRegister = data.enable_register || false
       settings.enableGallery = data.enable_gallery || false
       settings.enableApi = data.enable_api || false
       settings.allowGuestUpload = data.guest_upload || false

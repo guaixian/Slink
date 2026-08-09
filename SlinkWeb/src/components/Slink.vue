@@ -237,65 +237,57 @@
           <i class="fa fa-times text-xl"></i>
         </button>
         
-        <div class="mb-4 text-center text-neutral-700 font-medium">
-          <i class="fa fa-sign-in mr-2 text-primary"></i>站长登录
+        <!-- 登录/注册切换 -->
+        <div class="flex mb-4 border-b border-neutral-200">
+          <button
+            :class="['flex-1 py-2 text-sm font-medium text-center transition-colors', activeTab === 'login' ? 'text-primary border-b-2 border-primary' : 'text-neutral-500 hover:text-neutral-700']"
+            @click="activeTab = 'login'"
+          ><i class="fa fa-sign-in mr-1"></i> 登录</button>
+          <button
+            v-if="isRegisterEnabled"
+            :class="['flex-1 py-2 text-sm font-medium text-center transition-colors', activeTab === 'register' ? 'text-primary border-b-2 border-primary' : 'text-neutral-500 hover:text-neutral-700']"
+            @click="activeTab = 'register'"
+          ><i class="fa fa-user-plus mr-1"></i> 注册</button>
+        </div>
+
+        <!-- 错误提示 -->
+        <div v-if="loginError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+          <p class="text-red-600 text-sm flex items-center">
+            <i class="fa fa-exclamation-circle mr-2"></i>
+            {{ loginError }}
+          </p>
         </div>
 
         <!-- 登录表单 -->
-        <div>
-          <!-- 错误提示 -->
-          <div v-if="loginError" class="mb-4 p-3 bg-red-50 border border-red-200 rounded-lg">
-            <p class="text-red-600 text-sm flex items-center">
-              <i class="fa fa-exclamation-circle mr-2"></i>
-              {{ loginError }}
-            </p>
-          </div>
-          
+        <div v-show="activeTab === 'login'">
           <div class="mb-4">
             <label class="block text-neutral-700 mb-2 flex items-center">
               <i class="fa fa-user mr-2"></i>登录账号
             </label>
-            <input 
+            <input
               v-model="loginForm.username"
-              type="text" 
-              class="form-input" 
-              placeholder="首次初始化时设置的账号"
+              type="text"
+              class="form-input"
+              placeholder="请输入登录账号"
               autocomplete="username"
               :disabled="isSubmitting"
               @keyup.enter="handleLogin"
             >
           </div>
-          
-          <div class="mb-6">
+          <div class="mb-4">
             <label class="block text-neutral-700 mb-2 flex items-center">
               <i class="fa fa-lock mr-2"></i>密码
             </label>
-            <input 
+            <input
               v-model="loginForm.password"
-              type="password" 
-              class="form-input" 
-              placeholder="请输入您的密码"
+              type="password"
+              class="form-input"
+              placeholder="请输入密码"
               :disabled="isSubmitting"
               @keyup.enter="handleLogin"
             >
           </div>
-          
-          <div class="flex items-center justify-between mb-6">
-            <label class="flex items-center">
-              <input 
-                v-model="loginForm.remember"
-                type="checkbox" 
-                class="mr-2"
-                :disabled="isSubmitting"
-              >
-              <span class="text-sm text-neutral-600">记住我</span>
-            </label>
-            <a href="#" class="text-sm text-primary hover:underline flex items-center">
-              <i class="fa fa-question-circle mr-1"></i>忘记密码？
-            </a>
-          </div>
-          
-          <button 
+          <button
             @click="handleLogin"
             :disabled="isSubmitting"
             class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 transition-colors font-medium flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
@@ -304,11 +296,68 @@
             <i v-else class="fa fa-sign-in mr-2"></i>
             {{ isSubmitting ? '登录中...' : '登录' }}
           </button>
-          
-          <p class="mt-4 text-center text-xs text-neutral-500">
-            账号仅在首次初始化时创建，不提供公开注册。
-          </p>
         </div>
+
+        <!-- 注册表单 -->
+        <div v-show="activeTab === 'register'">
+          <div class="mb-4">
+            <label class="block text-neutral-700 mb-2 flex items-center">
+              <i class="fa fa-user mr-2"></i>登录账号
+            </label>
+            <input
+              v-model="registerForm.username"
+              type="text"
+              class="form-input"
+              placeholder="设置登录账号"
+              autocomplete="username"
+              :disabled="isSubmitting"
+              @keyup.enter="handleRegister"
+            >
+          </div>
+          <div class="mb-4">
+            <label class="block text-neutral-700 mb-2 flex items-center">
+              <i class="fa fa-id-card mr-2"></i>昵称
+            </label>
+            <input
+              v-model="registerForm.name"
+              type="text"
+              class="form-input"
+              placeholder="给自己起个名字（可选）"
+              :disabled="isSubmitting"
+              @keyup.enter="handleRegister"
+            >
+          </div>
+          <div class="mb-4">
+            <label class="block text-neutral-700 mb-2 flex items-center">
+              <i class="fa fa-lock mr-2"></i>密码
+            </label>
+            <input
+              v-model="registerForm.password"
+              type="password"
+              class="form-input"
+              placeholder="至少6位密码"
+              :disabled="isSubmitting"
+              @keyup.enter="handleRegister"
+            >
+          </div>
+          <button
+            @click="handleRegister"
+            :disabled="isSubmitting"
+            class="w-full py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            <i v-if="isSubmitting" class="fa fa-spinner fa-spin mr-2"></i>
+            <i v-else class="fa fa-user-plus mr-2"></i>
+            {{ isSubmitting ? '注册中...' : '注册' }}
+          </button>
+        </div>
+
+        <p class="mt-4 text-center text-xs text-neutral-500" v-if="activeTab === 'login'">
+          <span v-if="isRegisterEnabled">没有账号？<a href="#" @click.prevent="activeTab = 'register'" class="text-primary hover:underline">立即注册</a></span>
+          <span v-else>暂不提供公开注册</span>
+        </p>
+        <p class="mt-4 text-center text-xs text-neutral-500" v-if="activeTab === 'register'">
+          已有账号？<a href="#" @click.prevent="activeTab = 'login'" class="text-primary hover:underline">去登录</a>
+        </p>
       </div>
     </div>
   </div>
@@ -333,15 +382,24 @@ const uploadArea = ref<HTMLElement>()
 const fileInput = ref<HTMLInputElement>()
 
 // 表单数据
+const activeTab = ref<'login' | 'register'>('login')
 const loginForm = reactive({
   username: '',
   password: '',
   remember: false
 })
+const registerForm = reactive({
+  username: '',
+  name: '',
+  password: ''
+})
 
 // 表单验证状态
 const loginError = ref('')
 const isSubmitting = ref(false)
+
+// 是否开启注册
+const isRegisterEnabled = computed(() => userStore.isRegisterEnabled)
 
 // 计算属性
 const isLoggedIn = computed(() => userStore.isLoggedIn)
@@ -368,6 +426,10 @@ const closeModal = () => {
   loginForm.username = ''
   loginForm.password = ''
   loginForm.remember = false
+  registerForm.username = ''
+  registerForm.name = ''
+  registerForm.password = ''
+  activeTab.value = 'login'
 }
 
 // 文件上传相关
@@ -460,6 +522,42 @@ const handleLogin = async () => {
     } else {
       loginError.value = '登录失败，请稍后重试'
     }
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+// 注册处理
+const handleRegister = async () => {
+  if (!registerForm.username.trim()) {
+    loginError.value = '请输入登录账号'
+    return
+  }
+  if (!registerForm.password.trim() || registerForm.password.length < 6) {
+    loginError.value = '密码至少6位'
+    return
+  }
+
+  isSubmitting.value = true
+  loginError.value = ''
+
+  try {
+    const res = await http.post('/api/register', {
+      username: registerForm.username.trim(),
+      name: registerForm.name.trim() || registerForm.username.trim(),
+      password: registerForm.password
+    })
+    if (res.data.status) {
+      // 注册成功，自动登录
+      const data = res.data.data
+      userStore.setLoginData(data.token, data.user_id, data.account, data.name)
+      closeModal()
+      router.push('/admin')
+    } else {
+      loginError.value = res.data.message || '注册失败'
+    }
+  } catch (error: any) {
+    loginError.value = error.response?.data?.message || '注册失败，请稍后重试'
   } finally {
     isSubmitting.value = false
   }

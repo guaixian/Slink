@@ -5,6 +5,10 @@ import (
 	"fmt"
 	"os"
 
+	mysqlDriver "gorm.io/driver/mysql"
+	postgresDriver "gorm.io/driver/postgres"
+	sqlserverDriver "gorm.io/driver/sqlserver"
+	sqliteDriver "github.com/glebarez/sqlite"
 	"gorm.io/gorm"
 )
 
@@ -100,14 +104,67 @@ func InitDBWithConfig(config *DBConfig) error {
 
 	DB = db
 
-	// 非 SQLite 初始化脚本可能不含该表；SQLite 亦在此再次 AutoMigrate 保证存在
-	if err := db.AutoMigrate(&GlobalUploadPolicy{}); err != nil {
-		return fmt.Errorf("迁移 global_upload_policies 失败: %w", err)
-	}
-	if err := EnsureUploadPolicySeeded(db); err != nil {
-		return fmt.Errorf("初始化全局上传策略失败: %w", err)
+	// 自动迁移所有表
+	if err := migrateAllTables(db); err != nil {
+		return fmt.Errorf("数据库迁移失败: %w", err)
 	}
 
+	return nil
+}
+
+// migrateAllTables 自动迁移所有模型表
+func migrateAllTables(db *gorm.DB) error {
+	tables := []interface{}{
+		&User{},
+		&Config{},
+		&Groups{},
+		&PersonalAccessToken{},
+		&GroupStrategy{},
+		&UserStrategy{},
+		&Strategies{},
+		&Images{},
+		&Share{},
+		&GlobalUploadPolicy{},
+		&UploadPolicyGroup{},
+	}
+	for _, t := range tables {
+		if err := db.AutoMigrate(t); err != nil {
+			return err
+		}
+	}
+
+	// 初始化默认数据
+	if err := initAllDefaultData(db); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// initAllDefaultData 初始化所有默认数据
+func initAllDefaultData(db *gorm.DB) error {
+	if err := InitDefaultConfigs(db); err != nil {
+		return err
+	}
+	if err := InitDefaultGroups(db); err != nil {
+		return err
+	}
+	if err := InitDefaultStrategies(db); err != nil {
+		return err
+	}
+	if err := InitDefaultUploadPolicyGroup(db); err != nil {
+		return err
+	}
+	if err := MigrateLegacyUploadPolicy(db); err != nil {
+		return err
+	}
+	if err := EnsureUploadPolicySeeded(db); err != nil {
+		return err
+	}
+	// 迁移现有用户（旧 group_id=0 的用户）
+	db.Model(&User{}).Where("group_id = ?", 0).Update("group_id", 1)
+	// 注意：不再自动创建 admin@slink.org/123456 默认管理员（固定口令属于后门账号），
+	// 管理员一律由 /api/init/setup 初始化流程创建。
 	return nil
 }
 
@@ -124,6 +181,48 @@ func CloseDB() error {
 	err = sq.Close()
 	DB = nil
 	return err
+}
+
+// TestDBConnection 仅测试数据库连通性：打开连接并 Ping 后立即关闭。
+// 不创建数据库、不执行迁移、不修改全局 DB（供初始化向导的"测试连接"使用，
+// 避免测试动作污染正在运行的系统或目标库）。
+func TestDBConnection(config *DBConfig) error {
+	var db *gorm.DB
+	var err error
+
+	switch config.Type {
+	case "mysql":
+		dsn := fmt.Sprintf("%s:%s@tcp(%s:%d)/?charset=%s&parseTime=True&loc=Local&timeout=5s",
+			config.User, config.Password, config.Host, config.Port, config.Charset)
+		db, err = gorm.Open(mysqlDriver.Open(dsn), &gorm.Config{})
+	case "postgres", "postgresql":
+		dsn := fmt.Sprintf("host=%s port=%d user=%s password=%s dbname=postgres sslmode=%s connect_timeout=5",
+			config.Host, config.Port, config.User, config.Password, config.SSLMode)
+		db, err = gorm.Open(postgresDriver.Open(dsn), &gorm.Config{})
+	case "sqlserver", "mssql":
+		dsn := fmt.Sprintf("sqlserver://%s:%s@%s:%d?database=master&connection+timeout=5",
+			config.User, config.Password, config.Host, config.Port)
+		db, err = gorm.Open(sqlserverDriver.Open(dsn), &gorm.Config{})
+	case "sqlite":
+		fallthrough
+	default:
+		// SQLite 无需网络连接，仅校验能否打开（目录可写性由正式初始化保证）
+		db, err = gorm.Open(sqliteDriver.Open(config.DBName), &gorm.Config{})
+	}
+	if err != nil {
+		return fmt.Errorf("连接失败: %w", err)
+	}
+
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("获取连接失败: %w", err)
+	}
+	defer sqlDB.Close()
+
+	if err := sqlDB.Ping(); err != nil {
+		return fmt.Errorf("Ping 失败: %w", err)
+	}
+	return nil
 }
 
 // executeSQLFile 执行SQL文件

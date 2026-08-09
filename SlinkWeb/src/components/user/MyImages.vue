@@ -99,7 +99,7 @@
       <button class="page-btn" :disabled="currentPage === 1" @click="prevPage">
         <i class="fa fa-chevron-left"></i>
       </button>
-      <span class="page-info">第 {{ currentPage }} 页，共 {{ totalPages }} 页</span>
+      <span class="page-info">第 {{ currentPage }} 页，共 {{ totalPages }} 页（总计 {{ totalImages }} 张图片）</span>
       <button class="page-btn" :disabled="currentPage === totalPages" @click="nextPage">
         <i class="fa fa-chevron-right"></i>
       </button>
@@ -168,17 +168,12 @@ const loadImages = async () => {
   loading.value = true
   try {
     const response = await imageAPI.getImageList(currentPage.value, 20)
-    console.log('API响应:', response.data)
     if (response.data.status) {
-      // API直接返回图片数组，而不是包含images字段的对象
       images.value = response.data.data
-      totalImages.value = response.data.data.length
-      totalPages.value = Math.ceil(totalImages.value / 20)
-      console.log('图片数据:', images.value)
-      if (images.value.length > 0) {
-        console.log('第一张图片:', images.value[0])
-        console.log('图片URL:', images.value[0].links?.url)
-      }
+      // 使用服务端返回的 total 计算总页数
+      const total = (response.data as any).total || response.data.data.length
+      totalImages.value = total
+      totalPages.value = Math.ceil(total / 20) || 1
     }
   } catch (error) {
     console.error('加载图片列表失败:', error)

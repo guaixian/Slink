@@ -8,8 +8,8 @@
     <!-- 操作栏 -->
     <div class="action-bar">
       <div class="search-box">
-        <input 
-          type="text" 
+        <input
+          type="text"
           placeholder="输入关键字回车搜索..."
           class="search-input"
           v-model="searchKeyword"
@@ -17,9 +17,15 @@
         >
         <i class="fa fa-search search-icon"></i>
       </div>
-      <div class="loading-indicator" v-if="loading">
-        <i class="fa fa-spinner fa-spin"></i>
-        加载中...
+      <div class="action-right">
+        <button class="create-btn" @click="handleCreate">
+          <i class="fa fa-plus"></i>
+          创建用户
+        </button>
+        <div class="loading-indicator" v-if="loading">
+          <i class="fa fa-spinner fa-spin"></i>
+          加载中...
+        </div>
       </div>
     </div>
 
@@ -33,7 +39,8 @@
             <th>登录账号</th>
             <th>管理员</th>
             <th>图片数量</th>
-            <th>容量</th>
+            <th>已用 / 容量</th>
+            <th>策略组</th>
             <th>操作</th>
           </tr>
         </thead>
@@ -48,7 +55,8 @@
               </span>
             </td>
             <td>{{ user.image_nums }}</td>
-            <td>{{ formatCapacity(user.used_size) }}</td>
+            <td>{{ formatUsedSize(user.used_size) }} / {{ formatCapacity(user.capacity) }}</td>
+            <td>{{ getPolicyGroupName(user.policy_group_id) }}</td>
             <td>
               <div class="action-buttons">
                 <button class="detail-btn" @click="handleDetail(user)">
@@ -109,6 +117,27 @@ const filteredUsers = computed(() => {
   )
 })
 
+// 策略组名称映射
+const policyGroupNames = ref<Record<number, string>>({})
+
+const loadPolicyGroups = async () => {
+  try {
+    const res = await adminAPI.getPolicyGroups()
+    if (res.data?.status) {
+      const map: Record<number, string> = {}
+      for (const g of res.data.data || []) {
+        map[g.id] = g.name
+      }
+      policyGroupNames.value = map
+    }
+  } catch { /* ignore */ }
+}
+
+const getPolicyGroupName = (id: number) => {
+  if (!id) return '—'
+  return policyGroupNames.value[id] || `ID:${id}`
+}
+
 // 加载用户列表
 const loadUsers = async () => {
   loading.value = true
@@ -125,16 +154,30 @@ const loadUsers = async () => {
   }
 }
 
-// 格式化容量
-const formatCapacity = (capacity: number) => {
-  if (!capacity) return '0 MB'
-  if (capacity < 1024) return `${capacity.toFixed(2)} MB`
-  return `${(capacity / 1024).toFixed(2)} GB`
+// 格式化已用空间（used_size 单位为 MB）
+const formatUsedSize = (mb: number) => {
+  if (!mb) return '0 MB'
+  if (mb < 1024) return `${mb.toFixed(2)} MB`
+  return `${(mb / 1024).toFixed(2)} GB`
+}
+
+// 格式化容量上限（capacity 单位为字节，0 表示无限制）
+const formatCapacity = (bytes: number) => {
+  if (!bytes) return '无限制'
+  const mb = bytes / (1024 * 1024)
+  if (mb < 1024) return `${mb.toFixed(0)} MB`
+  return `${(mb / 1024).toFixed(2)} GB`
+}
+
+// 创建用户
+const handleCreate = () => {
+  router.push('/admin/users/create')
 }
 
 // 页面初始化
 onMounted(() => {
   loadUsers()
+  loadPolicyGroups()
 })
 
 // 搜索处理
@@ -224,6 +267,31 @@ const handleDelete = async (user: any) => {
   top: 50%;
   transform: translateY(-50%);
   color: #9ca3af;
+}
+
+.action-right {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.create-btn {
+  padding: 10px 20px;
+  background-color: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.create-btn:hover {
+  background-color: #2563eb;
 }
 
 .table-container {

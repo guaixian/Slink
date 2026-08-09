@@ -9,6 +9,9 @@ import (
 	"time"
 )
 
+// GlobalCache 全局缓存实例
+var GlobalCache Cache
+
 // Cache 缓存接口
 type Cache interface {
 	Get(key string) (interface{}, error)
@@ -313,4 +316,61 @@ func (c *MemoryCache) cleanupExpired() {
 		}
 		c.mu.Unlock()
 	}
+}
+
+// CacheType 缓存类型
+type CacheType string
+
+const (
+	CacheTypeMemory CacheType = "memory"
+	CacheTypeFile   CacheType = "file"
+	CacheTypeRedis  CacheType = "redis"
+)
+
+// InitCache 初始化全局缓存实例
+func InitCache(cacheType CacheType, config map[string]string) (Cache, error) {
+	var cache Cache
+	var err error
+
+	switch cacheType {
+	case CacheTypeFile:
+		cachePath := "cache"
+		if p, ok := config["path"]; ok && p != "" {
+			cachePath = p
+		}
+		cache, err = NewFileCache(cachePath)
+		if err != nil {
+			return nil, fmt.Errorf("初始化文件缓存失败: %w", err)
+		}
+	case CacheTypeRedis:
+		redisConfig := DefaultRedisConfig()
+		if host, ok := config["redis_host"]; ok && host != "" {
+			redisConfig.Host = host
+		}
+		if portStr, ok := config["redis_port"]; ok && portStr != "" {
+			var port int
+			if _, err := fmt.Sscanf(portStr, "%d", &port); err == nil && port > 0 {
+				redisConfig.Port = port
+			}
+		}
+		if password, ok := config["redis_password"]; ok {
+			redisConfig.Password = password
+		}
+		if dbStr, ok := config["redis_db"]; ok && dbStr != "" {
+			var db int
+			if _, err := fmt.Sscanf(dbStr, "%d", &db); err == nil {
+				redisConfig.DB = db
+			}
+		}
+		cache, err = NewRedisCache(redisConfig)
+		if err != nil {
+			return nil, fmt.Errorf("初始化Redis缓存失败: %w", err)
+		}
+	default:
+		// memory (默认)
+		cache = NewMemoryCache()
+	}
+
+	GlobalCache = cache
+	return cache, nil
 }

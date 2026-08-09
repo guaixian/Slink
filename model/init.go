@@ -31,8 +31,13 @@ type SetupRequest struct {
 	AdminEmail     string    `json:"admin_email"` // 兼容旧前端；与 AdminAccount 二选一
 	AdminPassword  string    `json:"admin_password" binding:"required,min=6"`
 	DatabaseConfig *DBConfig `json:"database_config" binding:"required"`
-	CacheType      string    `json:"cache_type"` // "memory" or "file"
+	CacheType      string    `json:"cache_type"` // "memory", "file", "redis"
 	CachePath      string    `json:"cache_path,omitempty"`
+	// Redis 配置
+	RedisHost     string `json:"redis_host,omitempty"`
+	RedisPort     int    `json:"redis_port,omitempty"`
+	RedisPassword string `json:"redis_password,omitempty"`
+	RedisDB       int    `json:"redis_db,omitempty"`
 }
 
 // ResolvedAdminAccount 返回非空的站长登录名（admin_account 或兼容 admin_email）
@@ -149,7 +154,7 @@ func PerformInitialSetup(req *SetupRequest) error {
 	}
 
 	// 保存缓存配置
-	if err := saveCacheConfig(req.CacheType, req.CachePath); err != nil {
+	if err := saveCacheConfig(req.CacheType, req.CachePath, req.RedisHost, req.RedisPort, req.RedisPassword, req.RedisDB); err != nil {
 		return fmt.Errorf("保存缓存配置失败: %w", err)
 	}
 
@@ -209,16 +214,24 @@ func LoadDatabaseConfig() (*DBConfig, error) {
 	return LoadDatabaseConfigFromFile(configFile)
 }
 
-// saveCacheConfig 保存缓存配置
-func saveCacheConfig(cacheType, cachePath string) error {
+// saveCacheConfig 保存缓存配置（支持Redis参数）
+func saveCacheConfig(cacheType, cachePath string, redisHost string, redisPort int, redisPassword string, redisDB int) error {
 	// 确保配置目录存在
 	if err := os.MkdirAll("config", 0755); err != nil {
 		return err
 	}
 
-	config := map[string]string{
+	config := map[string]interface{}{
 		"type": cacheType,
 		"path": cachePath,
+	}
+
+	// 如果是Redis类型，保存Redis连接参数
+	if cacheType == "redis" {
+		config["redis_host"] = redisHost
+		config["redis_port"] = redisPort
+		config["redis_password"] = redisPassword
+		config["redis_db"] = redisDB
 	}
 
 	// 序列化配置
@@ -232,26 +245,42 @@ func saveCacheConfig(cacheType, cachePath string) error {
 	return os.WriteFile(configFile, data, 0644)
 }
 
-// LoadCacheConfig 加载缓存配置
-func LoadCacheConfig() (string, string, error) {
+// LoadCacheConfig 加载缓存配置（支持Redis参数）
+func LoadCacheConfig() (map[string]string, error) {
 	configFile := "config/cache.json"
 
 	// 如果配置文件不存在，返回默认配置
 	if _, err := os.Stat(configFile); os.IsNotExist(err) {
-		return "memory", "", nil
+		return map[string]string{
+			"type": "memory",
+			"path": "",
+		}, nil
 	}
 
 	// 读取配置文件
 	data, err := os.ReadFile(configFile)
 	if err != nil {
-		return "", "", err
+		return nil, err
 	}
 
 	// 解析配置
-	var config map[string]string
-	if err := json.Unmarshal(data, &config); err != nil {
-		return "", "", err
+	var configRaw map[string]interface{}
+	if err := json.Unmarshal(data, &configRaw); err != nil {
+		return nil, err
 	}
 
-	return config["type"], config["path"], nil
+	// 转换为 map[string]string
+	config := make(map[string]string)
+	for k, v := range configRaw {
+		switch val := v.(type) {
+		case string:
+			config[k] = val
+		case float64:
+			config[k] = fmt.Sprintf("%.0f", val)
+		default:
+			config[k] = fmt.Sprint(val)
+		}
+	}
+
+	return config, nil
 }

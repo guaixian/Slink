@@ -161,7 +161,7 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
-import { imageAPI } from '../../api'
+import { adminAPI, imageAPI } from '../../api'
 import { useMessage } from '../../composables/useMessage'
 import PageLayout from './PageLayout.vue'
 
@@ -225,7 +225,7 @@ const resolveDisplaySrc = (url: string): string => {
 const loadImages = async () => {
   imageLoading.value = true
   try {
-    const response = await imageAPI.getImageList(1, 500)
+    const response = await adminAPI.getAllImages(1, 500)
     if (response.data?.status && Array.isArray(response.data.data)) {
       images.value = response.data.data.map((img: any) => {
         const perm = img.permission ?? img.Permission ?? 0

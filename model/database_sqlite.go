@@ -89,15 +89,22 @@ func InitSQLite(config *DBConfig) (*gorm.DB, error) {
 		&Groups{},
 		&PersonalAccessToken{},
 		&GroupStrategy{},
+		&UserStrategy{},
 		&Strategies{},
 		&Images{},
 		&Share{},
+		&GlobalUploadPolicy{},
+		&UploadPolicyGroup{},
 	); err != nil {
 		return nil, fmt.Errorf("迁移表结构失败: %w", err)
 	}
 
 	// 初始化默认数据
 	if err := initDefaultData(db); err != nil {
+		return nil, err
+	}
+	// 初始化默认上传策略组
+	if err := InitDefaultUploadPolicyGroup(db); err != nil {
 		return nil, err
 	}
 

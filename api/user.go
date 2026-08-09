@@ -29,15 +29,16 @@ func (r *LoginRequest) loginAccount() string {
 
 // UserListResponse 用户列表响应结构（不包含敏感信息）
 type UserListResponse struct {
-	ID           uint    `json:"id"`
-	Account      string  `json:"account"`
-	Name         string  `json:"name"`
-	IsAdmin      bool    `json:"is_admin"`
-	ImageNums    uint    `json:"image_nums"`
-	Capacity     uint    `json:"capacity"`
-	UsedSize     float64 `json:"used_size"`
-	RegisteredIP string  `json:"registered_ip"`
-	CreatedAt    string  `json:"created_at"`
+	ID            uint    `json:"id"`
+	Account       string  `json:"account"`
+	Name          string  `json:"name"`
+	IsAdmin       bool    `json:"is_admin"`
+	ImageNums     uint    `json:"image_nums"`
+	Capacity      uint    `json:"capacity"`
+	UsedSize      float64 `json:"used_size"`
+	PolicyGroupID uint    `json:"policy_group_id"`
+	RegisteredIP  string  `json:"registered_ip"`
+	CreatedAt     string  `json:"created_at"`
 }
 
 // StrategyInfo 存储策略信息结构
@@ -48,11 +49,95 @@ type StrategyInfo struct {
 	Key          string `json:"key"`
 }
 
-// Register 已废弃：个人图床仅在首次初始化时创建唯一账号，不提供公开注册。
+// Register 用户注册（需要系统开启注册开关）
 func Register(c *gin.Context) {
-	c.JSON(http.StatusForbidden, gin.H{
-		"status":  false,
-		"message": "个人图床不支持公开注册，请使用初始化时设置的账号登录",
+	// 检查是否开启注册
+	enableRegister, _ := model.GetConfigValue(model.DB, "enable_register")
+	if enableRegister != "true" {
+		c.JSON(http.StatusForbidden, gin.H{
+			"status":  false,
+			"message": "系统未开启公开注册",
+		})
+		return
+	}
+
+	var req struct {
+		Account  string `json:"username" binding:"required"`
+		Password string `json:"password" binding:"required,min=6"`
+		Name     string `json:"name"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"status":  false,
+			"message": "参数错误: " + err.Error(),
+		})
+		return
+	}
+
+	// 检查账号是否已存在
+	existing, _ := model.GetUserByEmail(model.DB, req.Account)
+	if existing != nil {
+		c.JSON(http.StatusConflict, gin.H{
+			"status":  false,
+			"message": "该账号已被注册",
+		})
+		return
+	}
+
+	hash, _ := utils.HashPassword(req.Password)
+	defaultConfig := model.GetDefaultUserConfig()
+	configJSON, _ := defaultConfig.ToJSON()
+
+	name := req.Name
+	if name == "" {
+		name = req.Account
+	}
+
+	// 获取默认上传策略组ID
+	var defaultPolicyGroupID uint
+	if pg, err := model.GetDefaultUploadPolicyGroup(model.DB); err == nil {
+		defaultPolicyGroupID = pg.ID
+	}
+
+	user := model.User{
+		Email:         req.Account,
+		Name:          name,
+		Password:      hash,
+		GroupID:       1,
+		PolicyGroupID: defaultPolicyGroupID,
+		IsAdmin:       0,
+		Configs:       configJSON,
+		RegisteredIP:  c.ClientIP(),
+	}
+
+	if err := model.CreateUser(model.DB, &user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  false,
+			"message": "注册失败",
+		})
+		return
+	}
+
+	// 生成 token 并自动登录
+	token, err := middleware.GenerateToken(user.ID, user.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"status":  false,
+			"message": "注册成功但登录失败，请手动登录",
+		})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"message": "注册成功",
+		"data": gin.H{
+			"token":    token,
+			"user_id":  user.ID,
+			"account":  user.Email,
+			"name":     user.Name,
+			"is_admin": false,
+		},
 	})
 }
 
@@ -123,6 +208,71 @@ func Login(c *gin.Context) {
 	})
 }
 
+// CreateUser 创建用户（管理员功能）
+func CreateUser(c *gin.Context) {
+	var req struct {
+		Account  string `json:"account" binding:"required"`
+		Name     string `json:"name" binding:"required"`
+		Password string `json:"password" binding:"required,min=6"`
+		Capacity uint   `json:"capacity"`
+		IsAdmin  int    `json:"is_admin"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "参数错误: " + err.Error()})
+		return
+	}
+
+	// 检查账号是否已存在
+	existing, _ := model.GetUserByEmail(model.DB, req.Account)
+	if existing != nil {
+		c.JSON(http.StatusConflict, gin.H{"status": false, "message": "该账号已存在"})
+		return
+	}
+
+	hash, err := utils.HashPassword(req.Password)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "密码处理失败"})
+		return
+	}
+
+	defaultConfig := model.GetDefaultUserConfig()
+	configJSON, _ := defaultConfig.ToJSON()
+
+	// 获取默认上传策略组
+	var defaultPolicyGroupID uint
+	if pg, err := model.GetDefaultUploadPolicyGroup(model.DB); err == nil {
+		defaultPolicyGroupID = pg.ID
+	}
+
+	user := model.User{
+		Email:         req.Account,
+		Name:          req.Name,
+		Password:      hash,
+		GroupID:       1,
+		PolicyGroupID: defaultPolicyGroupID,
+		IsAdmin:       uint(req.IsAdmin),
+		Capacity:      req.Capacity,
+		Configs:       configJSON,
+		RegisteredIP:  c.ClientIP(),
+	}
+
+	if err := model.CreateUser(model.DB, &user); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "创建用户失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"message": "创建用户成功",
+		"data": gin.H{
+			"id":       user.ID,
+			"account":  user.Email,
+			"name":     user.Name,
+			"is_admin": user.IsAdmin == 1,
+		},
+	})
+}
+
 // GetUsers 获取所有用户（管理员功能）
 func GetUsers(c *gin.Context) {
 	// 管理员权限已由中间件验证
@@ -144,15 +294,16 @@ func GetUsers(c *gin.Context) {
 		// 计算MB
 		usedSizeMB := float64(totalSize) / (1024 * 1024)
 		userResponse := UserListResponse{
-			ID:           user.ID,
-			Account:      user.Email,
-			Name:         user.Name,
-			IsAdmin:      user.IsAdmin == 1,
-			ImageNums:    user.ImageNums,
-			Capacity:     user.Capacity,
-			UsedSize:     usedSizeMB,
-			RegisteredIP: user.RegisteredIP,
-			CreatedAt:    user.CreatedAt.Format("2006-01-02 15:04:05"),
+			ID:            user.ID,
+			Account:       user.Email,
+			Name:          user.Name,
+			IsAdmin:       user.IsAdmin == 1,
+			ImageNums:     user.ImageNums,
+			Capacity:      user.Capacity,
+			UsedSize:      usedSizeMB,
+			PolicyGroupID: user.PolicyGroupID,
+			RegisteredIP:  user.RegisteredIP,
+			CreatedAt:     user.CreatedAt.Format("2006-01-02 15:04:05"),
 		}
 		userResponses = append(userResponses, userResponse)
 	}
@@ -182,21 +333,20 @@ func GetUser(c *gin.Context) {
 	}
 
 	// 构建不包含敏感信息的用户信息
-	userResponse := UserListResponse{
-		ID:           user.ID,
-		Account:      user.Email,
-		Name:         user.Name,
-		IsAdmin:      user.IsAdmin == 1,
-		ImageNums:    user.ImageNums,
-		Capacity:     user.Capacity,
-		RegisteredIP: user.RegisteredIP,
-		CreatedAt:    user.CreatedAt.Format("2006-01-02 15:04:05"),
-	}
-
 	c.JSON(http.StatusOK, gin.H{
 		"status":  true,
 		"message": "获取成功",
-		"data":    userResponse,
+		"data": gin.H{
+			"id":              user.ID,
+			"account":         user.Email,
+			"name":            user.Name,
+			"is_admin":        user.IsAdmin == 1,
+			"image_nums":      user.ImageNums,
+			"capacity":        user.Capacity,
+			"policy_group_id": user.PolicyGroupID,
+			"registered_ip":   user.RegisteredIP,
+			"created_at":      user.CreatedAt.Format("2006-01-02 15:04:05"),
+		},
 	})
 }
 
@@ -222,8 +372,8 @@ func UpdateUser(c *gin.Context) {
 		Account  string `json:"account"`
 		Email    string `json:"email"`
 		Password string `json:"password"`
-		Capacity uint   `json:"capacity"`
-		IsAdmin  int    `json:"is_admin"`
+		Capacity *uint  `json:"capacity"`
+		IsAdmin  *int   `json:"is_admin"`
 		GroupID  *uint  `json:"group_id"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -239,9 +389,20 @@ func UpdateUser(c *gin.Context) {
 	} else if e := strings.TrimSpace(req.Email); e != "" {
 		existing.Email = e
 	}
-	existing.Capacity = req.Capacity
-	if req.IsAdmin == 0 || req.IsAdmin == 1 {
-		existing.IsAdmin = uint(req.IsAdmin)
+	// 仅当请求显式携带 capacity 时才更新，避免缺省值 0 清空容量限制
+	if req.Capacity != nil {
+		existing.Capacity = *req.Capacity
+	}
+	// 仅当请求显式携带 is_admin 时才更新，避免缺省值 0 把管理员降级
+	if req.IsAdmin != nil {
+		// 不允许管理员取消自己的管理员权限（防止系统失去管理员）
+		if currentID, ok := c.Get("userID"); ok && currentID.(uint) == existing.ID && *req.IsAdmin == 0 {
+			c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "不能取消自己的管理员权限"})
+			return
+		}
+		if *req.IsAdmin == 0 || *req.IsAdmin == 1 {
+			existing.IsAdmin = uint(*req.IsAdmin)
+		}
 	}
 	if req.GroupID != nil {
 		existing.GroupID = *req.GroupID
@@ -263,7 +424,15 @@ func UpdateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"status":  true,
 		"message": "更新成功",
-		"data":    existing,
+		// 不回传完整 User 结构，避免泄露密码哈希
+		"data": gin.H{
+			"id":              existing.ID,
+			"account":         existing.Email,
+			"name":            existing.Name,
+			"is_admin":        existing.IsAdmin == 1,
+			"capacity":        existing.Capacity,
+			"policy_group_id": existing.PolicyGroupID,
+		},
 	})
 }
 
@@ -289,6 +458,11 @@ func DeleteUser(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "不能删除管理员用户"})
 		return
 	}
+
+	// 清理关联数据：访问令牌、分享、策略分配（图片与文件保留，可由图片管理另行处理）
+	model.DeletePersonalAccessTokensByUsername(model.DB, user.Email)
+	model.DB.Where("user_id = ?", user.ID).Delete(&model.Share{})
+	model.DeleteUserStrategiesByUserID(model.DB, user.ID)
 
 	if err := model.DeleteUser(model.DB, uint(userID)); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "删除用户失败"})
@@ -417,14 +591,23 @@ func GetCurrentUser(c *gin.Context) {
 		userConfig = model.GetDefaultUserConfig()
 	}
 
-	// 个人图床：可使用系统中配置的全部存储策略
-	allStrategies, err := model.GetAllStrategies(model.DB)
+	// 获取用户可用的存储策略：管理员全部，普通用户只看已分配的
+	var visibleStrategies []model.Strategies
+	if user.IsAdmin == 1 {
+		visibleStrategies, err = model.GetAllStrategies(model.DB)
+	} else {
+		visibleStrategies, err = model.GetUserStrategies(model.DB, user.ID)
+		if err != nil || len(visibleStrategies) == 0 {
+			// 如果用户没有分配任何策略，回退到全部策略
+			visibleStrategies, err = model.GetAllStrategies(model.DB)
+		}
+	}
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取存储策略失败"})
 		return
 	}
-	strategies := make([]StrategyInfo, 0, len(allStrategies))
-	for _, strategy := range allStrategies {
+	strategies := make([]StrategyInfo, 0, len(visibleStrategies))
+	for _, strategy := range visibleStrategies {
 		strategies = append(strategies, StrategyInfo{
 			ID:           strategy.ID,
 			Name:         strategy.Name,
@@ -438,13 +621,15 @@ func GetCurrentUser(c *gin.Context) {
 		"message": "获取成功",
 		"data": gin.H{
 			"user": gin.H{
-				"id":            user.ID,
-				"account":       user.Email,
-				"name":          user.Name,
-				"is_admin":      user.IsAdmin == 1,
-				"image_nums":    user.ImageNums,
-				"created_at":    user.CreatedAt,
-				"registered_ip": user.RegisteredIP,
+				"id":              user.ID,
+				"account":         user.Email,
+				"name":            user.Name,
+				"is_admin":        user.IsAdmin == 1,
+				"image_nums":      user.ImageNums,
+				"capacity":        user.Capacity,
+				"policy_group_id": user.PolicyGroupID,
+				"created_at":      user.CreatedAt,
+				"registered_ip":   user.RegisteredIP,
 			},
 			"strategies": strategies,
 			"config": gin.H{

@@ -16,6 +16,8 @@ import SystemSettings from '../components/admin/SystemSettings.vue'
 import UploadPolicySettings from '../components/admin/UploadPolicySettings.vue'
 import StorageStrategy from '../components/admin/StorageStrategy.vue'
 import StorageStrategyEdit from '../components/admin/StorageStrategyEdit.vue'
+import UserManagement from '../components/admin/UserManagement.vue'
+import UserEdit from '../components/admin/UserEdit.vue'
 
 import { setupRouterGuards } from './guards'
 
@@ -101,6 +103,21 @@ const router = createRouter({
           path: 'settings',
           name: 'admin-settings',
           component: SystemSettings,
+        },
+        {
+          path: 'users',
+          name: 'admin-users',
+          component: UserManagement,
+        },
+        {
+          path: 'users/create',
+          name: 'admin-users-create',
+          component: UserEdit,
+        },
+        {
+          path: 'users/edit/:id',
+          name: 'admin-users-edit',
+          component: UserEdit,
         },
       ],
     },

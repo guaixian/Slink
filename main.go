@@ -2,6 +2,7 @@ package main
 
 import (
 	"Slink/applog"
+	"Slink/cache"
 	"Slink/model"
 	"fmt"
 	"os"
@@ -10,7 +11,6 @@ import (
 
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
-	"github.com/thinkerou/favicon"
 )
 
 // main 程序入口点
@@ -21,24 +21,39 @@ func main() {
 	// 初始化数据库连接
 	initializeDatabase()
 
+	// 初始化缓存
+	initializeCache()
+
 	if strings.TrimSpace(os.Getenv("SLINK_JWT_SECRET")) == "" {
 		applog.Logger.Warn("未设置环境变量 SLINK_JWT_SECRET，正使用内置开发密钥；生产或 Docker 部署请务必设置长随机串")
 	}
 
-	// 创建Gin引擎并配置路由
+	// 创建Gin引擎并配置路由（favicon/CORS/InitGuard 在 SetupRouter 内、路由注册前挂载）
 	r := SetupRouter()
-
-	// 配置favicon
-	r.Use(favicon.New("SlinkWeb/dist/favicon.ico"))
-
-	// 配置CORS跨域中间件
-	configureCORSMiddleware(r)
-
-	// 应用初始化守卫中间件
-	r.Use(InitGuard())
 
 	// 启动HTTP服务器
 	startServer(r)
+}
+
+// initializeCache 初始化缓存实例
+func initializeCache() {
+	config, err := model.LoadCacheConfig()
+	if err != nil {
+		applog.Logger.Warn("加载缓存配置失败，使用默认内存缓存", "error", err)
+		cache.GlobalCache = cache.NewMemoryCache()
+		return
+	}
+
+	cacheType := cache.CacheType(config["type"])
+	if cacheType == "" {
+		cacheType = cache.CacheTypeMemory
+	}
+
+	if _, err := cache.InitCache(cacheType, config); err != nil {
+		applog.Logger.Warn("初始化缓存失败，降级为内存缓存", "type", cacheType, "error", err)
+		cache.GlobalCache = cache.NewMemoryCache()
+	}
+	applog.Logger.Info("缓存初始化成功", "type", cacheType)
 }
 
 // initializeDatabase 初始化数据库连接

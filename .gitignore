@@ -1,0 +1,17 @@
+# 运行时状态与本地数据
+data.db
+config/
+static/
+cache/*.local
+
+# 编译产物
+slink
+slink.exe
+
+# IDE
+.idea/
+.vscode/
+
+# 日志
+*.log
+applog/*.log

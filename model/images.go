@@ -27,6 +27,7 @@ type Images struct {
 	Permissions uint      `gorm:"not null;default:0;comment:访问权限 0-公开 1-私有"`
 	IsUnhealthy uint      `gorm:"not null;default:0;comment:是否不健康 0-否 1-是"`
 	UploadIp    string    `gorm:"not null;comment:上传IP地址"`
+	RefImageID  *uint     `gorm:"comment:引用图片ID(MD5去重，指向原始图片)"`
 	CreatedAt   time.Time `gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt   time.Time `gorm:"autoUpdateTime;comment:更新时间"`
 }
@@ -185,6 +186,47 @@ func GetImageCountByUserIDInTimeRange(db *gorm.DB, userID uint, startTime, endTi
 	err := db.Model(&Images{}).
 		Where("user_id = ? AND created_at >= ? AND created_at < ?", userID, startTime, endTime).
 		Count(&count).Error
+	return count, err
+}
+
+// GetImageByMD5 根据MD5获取图片（用于去重检查）
+func GetImageByMD5(db *gorm.DB, md5 string) (*Images, error) {
+	var image Images
+	err := db.Where("md5 = ? AND ref_image_id IS NULL", md5).First(&image).Error
+	if err != nil {
+		return nil, err
+	}
+	return &image, nil
+}
+
+// GetImagesByUserIDPaginated 分页获取用户的图片列表
+func GetImagesByUserIDPaginated(db *gorm.DB, userID uint, page, limit int) ([]Images, int64, error) {
+	var images []Images
+	var total int64
+	db.Model(&Images{}).Where("user_id = ?", userID).Count(&total)
+	offset := (page - 1) * limit
+	err := db.Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Offset(offset).
+		Limit(limit).
+		Find(&images).Error
+	return images, total, err
+}
+
+// GetAllImagesPaginated 分页获取所有图片（管理员）
+func GetAllImagesPaginated(db *gorm.DB, page, limit int) ([]Images, int64, error) {
+	var images []Images
+	var total int64
+	db.Model(&Images{}).Count(&total)
+	offset := (page - 1) * limit
+	err := db.Order("created_at DESC").Offset(offset).Limit(limit).Find(&images).Error
+	return images, total, err
+}
+
+// GetRefCountByImageID 获取引用某图片的记录数
+func GetRefCountByImageID(db *gorm.DB, imageID uint) (int64, error) {
+	var count int64
+	err := db.Model(&Images{}).Where("ref_image_id = ?", imageID).Count(&count).Error
 	return count, err
 }
 

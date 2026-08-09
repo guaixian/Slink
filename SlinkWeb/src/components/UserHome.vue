@@ -54,40 +54,48 @@
           </router-link>
         </li>
 
-        <li class="nav-divider">
-          <span class="divider-text">系统</span>
-        </li>
+        <template v-if="userStore.isAdmin">
+          <li class="nav-divider">
+            <span class="divider-text">系统</span>
+          </li>
 
-        <li class="nav-item" :class="{ active: $route.name === 'admin-image-management' }">
-          <router-link to="/admin/image-management" class="flex items-center">
-            <i class="fa fa-cogs mr-3"></i>
-            <span>图片管理</span>
-          </router-link>
-        </li>
-        <li class="nav-item" :class="{ active: $route.name === 'admin-console' }">
-          <router-link to="/admin/console" class="flex items-center">
-            <i class="fa fa-terminal mr-3"></i>
-            <span>控制台</span>
-          </router-link>
-        </li>
-        <li class="nav-item" :class="{ active: $route.name === 'admin-upload-policy' }">
-          <router-link to="/admin/upload-policy" class="flex items-center">
-            <i class="fa fa-upload mr-3"></i>
-            <span>上传策略</span>
-          </router-link>
-        </li>
-        <li class="nav-item" :class="{ active: $route.name === 'admin-settings' }">
-          <router-link to="/admin/settings" class="flex items-center">
-            <i class="fa fa-cogs mr-3"></i>
-            <span>系统设置</span>
-          </router-link>
-        </li>
-        <li class="nav-item" :class="{ active: $route.name === 'admin-storage' || $route.name === 'admin-storage-create' || $route.name === 'admin-storage-edit' }">
-          <router-link to="/admin/storage" class="flex items-center">
-            <i class="fa fa-database mr-3"></i>
-            <span>储存策略</span>
-          </router-link>
-        </li>
+          <li class="nav-item" :class="{ active: $route.name === 'admin-users' || $route.name === 'admin-users-create' || $route.name === 'admin-users-edit' }">
+            <router-link to="/admin/users" class="flex items-center">
+              <i class="fa fa-users mr-3"></i>
+              <span>用户管理</span>
+            </router-link>
+          </li>
+          <li class="nav-item" :class="{ active: $route.name === 'admin-image-management' }">
+            <router-link to="/admin/image-management" class="flex items-center">
+              <i class="fa fa-cogs mr-3"></i>
+              <span>图片管理</span>
+            </router-link>
+          </li>
+          <li class="nav-item" :class="{ active: $route.name === 'admin-console' }">
+            <router-link to="/admin/console" class="flex items-center">
+              <i class="fa fa-terminal mr-3"></i>
+              <span>控制台</span>
+            </router-link>
+          </li>
+          <li class="nav-item" :class="{ active: $route.name === 'admin-upload-policy' }">
+            <router-link to="/admin/upload-policy" class="flex items-center">
+              <i class="fa fa-upload mr-3"></i>
+              <span>上传策略</span>
+            </router-link>
+          </li>
+          <li class="nav-item" :class="{ active: $route.name === 'admin-settings' }">
+            <router-link to="/admin/settings" class="flex items-center">
+              <i class="fa fa-cogs mr-3"></i>
+              <span>系统设置</span>
+            </router-link>
+          </li>
+          <li class="nav-item" :class="{ active: $route.name === 'admin-storage' || $route.name === 'admin-storage-create' || $route.name === 'admin-storage-edit' }">
+            <router-link to="/admin/storage" class="flex items-center">
+              <i class="fa fa-database mr-3"></i>
+              <span>储存策略</span>
+            </router-link>
+          </li>
+        </template>
       </ul>
       
       <div class="sidebar-footer">
@@ -143,7 +151,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { userAPI } from '../api'
 import { useUserStore } from '../stores/user'
@@ -159,28 +167,45 @@ const usedStorage = ref('—')
 const totalStorage = ref('—')
 const storageUsage = ref(0)
 
-function formatUsedMB(mb: number): string {
+function formatMB(mb: number): string {
   if (mb < 1) return `${(mb * 1024).toFixed(2)} KB`
   if (mb < 1024) return `${mb.toFixed(2)} MB`
   return `${(mb / 1024).toFixed(2)} GB`
 }
 
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes <= 0) return '无限制'
+  const mb = bytes / (1024 * 1024)
+  return formatMB(mb)
+}
+
 async function loadSidebarUsage() {
-  const quotaGb = userStore.defaultStorageGB || 5
-  totalStorage.value = `${quotaGb} GB（配额）`
   try {
-    if (!userStore.isSystemConfigLoaded) {
-      await userStore.getSystemInfo()
+    // 并行获取用户信息和仪表盘数据
+    const [infoRes, dashRes] = await Promise.all([
+      userAPI.getUserInfo().catch(() => null),
+      userAPI.getDashboardData().catch(() => null)
+    ])
+
+    // 解析用户容量（getUserInfo 返回 { user: { capacity, ... }, config, strategies }）
+    let capBytes = 0
+    if (infoRes?.data?.status) {
+      const user = (infoRes.data.data as any)?.user
+      if (user?.capacity !== undefined) {
+        capBytes = Number(user.capacity) || 0
+      }
     }
-    const res = await userAPI.getDashboardData()
-    if (res.data?.status === 'success' && res.data.data?.dashboard) {
-      const mb = Number(res.data.data.dashboard.used_size_mb) || 0
-      usedStorage.value = formatUsedMB(mb)
-      const capMb = quotaGb * 1024
-      storageUsage.value = capMb > 0 ? Math.min(100, Math.round((mb / capMb) * 100)) : 0
+    totalStorage.value = capBytes > 0 ? formatBytes(capBytes) : '无限制'
+
+    // 解析已用存储
+    if (dashRes?.data?.status === 'success' && dashRes.data.data?.dashboard) {
+      const mb = Number(dashRes.data.data.dashboard.used_size_mb) || 0
+      usedStorage.value = formatMB(mb)
+      const capMb = capBytes > 0 ? capBytes / (1024 * 1024) : 5 * 1024
+      storageUsage.value = Math.min(100, Math.round((mb / capMb) * 100))
     }
   } catch {
-    usedStorage.value = '—'
+    // 静默失败
   }
 }
 
@@ -210,6 +235,12 @@ const pageTitle = computed(() => {
       return '系统控制台'
     case 'admin-upload-policy':
       return '上传策略'
+    case 'admin-users':
+      return '用户管理'
+    case 'admin-users-create':
+      return '创建用户'
+    case 'admin-users-edit':
+      return '编辑用户'
     case 'admin-settings':
       return '系统设置'
     case 'admin-storage':
@@ -262,6 +293,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.removeEventListener('resize', updateMobileStatus)
+})
+
+watch(() => route.name, () => {
+  if (userStore.isLoggedIn) loadSidebarUsage()
 })
 </script>
 

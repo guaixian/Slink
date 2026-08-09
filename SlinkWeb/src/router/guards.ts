@@ -4,6 +4,16 @@ import { http } from '../utils/request'
 
 const authRoutes = ['/admin']
 
+// 只有管理员能访问的路由
+const adminOnlyRoutes = [
+  '/admin/users',
+  '/admin/image-management',
+  '/admin/console',
+  '/admin/upload-policy',
+  '/admin/settings',
+  '/admin/storage',
+]
+
 export function setupRouterGuards(router: Router) {
   router.beforeEach(async (to, from, next) => {
     if (to.path === '/init') {
@@ -49,6 +59,13 @@ export function setupRouterGuards(router: Router) {
     const requiresAuth = authRoutes.some((route) => to.path.startsWith(route))
     if (requiresAuth && !userStore.isLoggedIn) {
       next('/')
+      return
+    }
+
+    // 检查管理员权限
+    const requiresAdmin = adminOnlyRoutes.some((route) => to.path.startsWith(route))
+    if (requiresAdmin && !userStore.isAdmin) {
+      next('/admin')
       return
     }
 

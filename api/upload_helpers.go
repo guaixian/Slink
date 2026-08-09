@@ -4,21 +4,82 @@ import (
 	"Slink/model"
 	"Slink/utils"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
 )
 
-// resolveUploadStrategy 解析本次上传使用的存储策略：表单/JSON 的 strategy_id 优先，否则用户偏好中的 default_strategy，否则第一个已配置策略
-func resolveUploadStrategy(db *gorm.DB, userConfig model.UserConfig, strategyIDRaw string) (*model.Strategies, *model.StrategyConfigData, error) {
-	sid := userConfig.DefaultStrategy
+// remoteImageHTTPClient URL 抓取专用客户端：带超时，限制重定向次数
+var remoteImageHTTPClient = &http.Client{
+	Timeout: 15 * time.Second,
+	CheckRedirect: func(req *http.Request, via []*http.Request) error {
+		if len(via) >= 5 {
+			return fmt.Errorf("重定向次数过多")
+		}
+		if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+			return fmt.Errorf("不允许的协议: %s", req.URL.Scheme)
+		}
+		return nil
+	},
+}
+
+// fetchRemoteImage 从 URL 下载图片数据。
+// 仅允许 http/https；无论对方是否返回 Content-Length，都把读取大小限制在 maxSizeKB 内。
+func fetchRemoteImage(rawURL string, maxSizeKB uint) ([]byte, string, error) {
+	u, err := url.Parse(rawURL)
+	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		return nil, "", fmt.Errorf("无效的URL，仅支持 http/https")
+	}
+
+	resp, err := remoteImageHTTPClient.Get(rawURL)
+	if err != nil {
+		return nil, "", fmt.Errorf("下载图片失败: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("下载图片失败，状态码: %d", resp.StatusCode)
+	}
+
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.HasPrefix(contentType, "image/") {
+		return nil, "", fmt.Errorf("URL不是有效的图片")
+	}
+
+	maxBytes := int64(maxSizeKB) * 1024
+	if resp.ContentLength > maxBytes {
+		return nil, "", fmt.Errorf("文件大小超过限制（%dKB）", maxSizeKB)
+	}
+
+	// 流式限制读取大小，Content-Length 缺失或虚报时也能拦截
+	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
+	if err != nil {
+		return nil, "", fmt.Errorf("读取图片数据失败")
+	}
+	if int64(len(data)) > maxBytes {
+		return nil, "", fmt.Errorf("文件大小超过限制（%dKB）", maxSizeKB)
+	}
+	return data, contentType, nil
+}
+
+
+// resolveUploadStrategy 解析本次上传使用的存储策略
+// 优先使用请求中指定的 strategy_id，其次查用户分配的策略(UserStrategy表)，再回退到用户偏好中的 default_strategy，最后用第一个可用策略
+func resolveUploadStrategy(db *gorm.DB, userID uint, userConfig model.UserConfig, strategyIDRaw string) (*model.Strategies, *model.StrategyConfigData, error) {
+	// 1. 解析请求中指定的 strategy_id
+	var requestedSID uint
 	if strategyIDRaw != "" {
 		if v, err := strconv.ParseUint(strategyIDRaw, 10, 32); err == nil && v > 0 {
-			sid = int(v)
+			requestedSID = uint(v)
 		}
 	}
+
 	all, err := model.GetAllStrategies(db)
 	if err != nil {
 		return nil, nil, err
@@ -26,9 +87,51 @@ func resolveUploadStrategy(db *gorm.DB, userConfig model.UserConfig, strategyIDR
 	if len(all) == 0 {
 		return nil, nil, fmt.Errorf("未配置存储策略")
 	}
+
+	// 2. 获取用户分配的策略列表
+	userStrategyIDs, _ := model.GetStrategyIDsByUserID(db, userID)
+
+	// 构建可用策略ID集合（用户分配的策略，或全部策略如果是管理员/无分配记录）
+	isAdmin := false
+	if u, err := model.GetUserByID(db, userID); err == nil && u.IsAdmin == 1 {
+		isAdmin = true
+	}
+
+	// 管理员可以看到所有策略；普通用户只能看到分配给他们的策略
+	availableIDs := make(map[uint]bool)
+	if isAdmin || len(userStrategyIDs) == 0 {
+		for i := range all {
+			availableIDs[all[i].ID] = true
+		}
+	} else {
+		for _, sid := range userStrategyIDs {
+			availableIDs[sid] = true
+		}
+	}
+
+	// 3. 如果请求指定了策略ID，验证是否可用
+	if requestedSID > 0 {
+		if availableIDs[requestedSID] {
+			if st, err := model.GetStrategyByID(db, requestedSID); err == nil {
+				scd, err := model.GetStrategyConfigData(st)
+				return st, scd, err
+			}
+		}
+	}
+
+	// 4. 回退到用户偏好中的 DefaultStrategy
+	sid := userConfig.DefaultStrategy
+	if availableIDs[uint(sid)] {
+		if st, err := model.GetStrategyByID(db, uint(sid)); err == nil {
+			scd, err := model.GetStrategyConfigData(st)
+			return st, scd, err
+		}
+	}
+
+	// 5. 使用第一个可用策略
 	var st *model.Strategies
 	for i := range all {
-		if int(all[i].ID) == sid {
+		if availableIDs[all[i].ID] {
 			st = &all[i]
 			break
 		}
@@ -41,6 +144,19 @@ func resolveUploadStrategy(db *gorm.DB, userConfig model.UserConfig, strategyIDR
 		return nil, nil, err
 	}
 	return st, scd, nil
+}
+
+// checkMD5Duplicate 检查MD5是否已存在，返回已存在的原始图片记录
+// 用于上传去重：如果相同MD5的图片已存在，则返回已有记录，新上传只需创建引用记录
+func checkMD5Duplicate(db *gorm.DB, md5 string) (*model.Images, error) {
+	img, err := model.GetImageByMD5(db, md5)
+	if err != nil {
+		if err == gorm.ErrRecordNotFound {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return img, nil
 }
 
 func strategyUtilsConfigFromModel(strategy *model.Strategies) (*utils.StrategyConfig, error) {
@@ -85,4 +201,66 @@ func readGlobalUploadPolicy(c *gin.Context) (*model.GroupConfig, bool) {
 		return nil, false
 	}
 	return pol, true
+}
+
+// readUserUploadPolicy 读取用户所属上传策略组的配置（优先用户策略组，否则默认策略组，否则全局策略）
+func readUserUploadPolicy(c *gin.Context, userID uint) (*model.GroupConfig, bool) {
+	// 优先：用户所属上传策略组
+	pg, err := model.GetUserUploadPolicyGroup(model.DB, userID)
+	if err == nil && pg != nil {
+		return pg.ToGroupConfig(), true
+	}
+
+	// 其次：默认策略组
+	defaultPg, err := model.GetDefaultUploadPolicyGroup(model.DB)
+	if err == nil && defaultPg != nil {
+		return defaultPg.ToGroupConfig(), true
+	}
+
+	// 最后：旧的全局策略
+	pol, err := model.GetGlobalUploadPolicy(model.DB)
+	if err == nil {
+		return pol, true
+	}
+
+	c.JSON(500, gin.H{"error": "未找到上传策略配置"})
+	return nil, false
+}
+
+// createImageRecordWithDedup 创建图片记录（含MD5去重逻辑）
+// 如果相同MD5的原始图片已存在，则创建引用记录（skip physical upload）
+// 返回 imageRecord, isDuplicate, error
+func createImageRecordWithDedup(imageRecord *model.Images) (*model.Images, bool, error) {
+	db := model.DB
+
+	// 检查MD5是否已存在
+	existing, err := checkMD5Duplicate(db, imageRecord.Md5)
+	if err != nil {
+		return nil, false, fmt.Errorf("MD5去重检查失败: %w", err)
+	}
+
+	if existing != nil {
+		// 命中相同图片：创建引用记录，指向已存在的原始图片
+		refID := existing.ID
+		imageRecord.RefImageID = &refID
+		imageRecord.Path = existing.Path
+		imageRecord.Name = existing.Name
+		imageRecord.Size = existing.Size
+		imageRecord.Mimetype = existing.Mimetype
+		imageRecord.Extension = existing.Extension
+		imageRecord.Width = existing.Width
+		imageRecord.Height = existing.Height
+		imageRecord.StrategyID = existing.StrategyID
+
+		if err := model.CreateImage(db, imageRecord); err != nil {
+			return nil, false, fmt.Errorf("创建引用图片记录失败: %w", err)
+		}
+		return imageRecord, true, nil
+	}
+
+	// 未命中：正常创建新记录
+	if err := model.CreateImage(db, imageRecord); err != nil {
+		return nil, false, fmt.Errorf("创建图片记录失败: %w", err)
+	}
+	return imageRecord, false, nil
 }

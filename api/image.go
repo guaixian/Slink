@@ -6,7 +6,6 @@ import (
 	"Slink/model"
 	"Slink/utils"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -72,7 +71,7 @@ func UploadImage(c *gin.Context) {
 		return
 	}
 
-	policy, ok := readGlobalUploadPolicy(c)
+	policy, ok := readUserUploadPolicy(c, userID.(uint))
 	if !ok {
 		return
 	}
@@ -116,7 +115,7 @@ func UploadImage(c *gin.Context) {
 		userConfig = model.GetDefaultUserConfig()
 	}
 
-	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userConfig, c.PostForm("strategy_id"))
+	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, c.PostForm("strategy_id"))
 	if err != nil {
 		applog.Logger.Error("upload: resolve strategy failed", "request_id", rid, "handler", "UploadImage", "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -158,16 +157,17 @@ func UploadImage(c *gin.Context) {
 		SHA1:        imageInfo.SHA1,
 		Width:       imageInfo.Width,
 		Height:      imageInfo.Height,
-		Permissions: uint(userConfig.DefaultPermission), // 临时设置，稍后根据用户配置更新
-		IsUnhealthy: 0,                                  // 默认健康
+		Permissions: uint(userConfig.DefaultPermission),
+		IsUnhealthy: 0,
 		UploadIp:    c.ClientIP(),
 	}
 
 	// 根据用户配置设置图片权限
 	model.SetImagePermissionFromUserConfig(imageRecord, userConfig)
 
-	// 保存到数据库
-	if err := model.CreateImage(model.DB, imageRecord); err != nil {
+	// 保存到数据库（含MD5去重）
+	imageRecord, isDup, err := createImageRecordWithDedup(imageRecord)
+	if err != nil {
 		applog.Logger.Error("upload: db insert failed", "request_id", rid, "handler", "UploadImage", "user_id", userID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片记录失败"})
 		return
@@ -178,13 +178,18 @@ func UploadImage(c *gin.Context) {
 		applog.Logger.Warn("upload: increment image count failed", "request_id", rid, "user_id", userID, "error", err)
 	}
 
-	pathname := normalizePathnameForLinks(imageInfo.Path)
+	pathname := normalizePathnameForLinks(imageRecord.Path)
 	links := utils.GenerateImageLinksWithConfig(pathname, imageInfo.OriginName, utilsConfig)
 
-	applog.Logger.Info("upload: success", "request_id", rid, "handler", "UploadImage", "user_id", userID,
-		"image_id", imageRecord.ID, "pathname", pathname, "md5", imageInfo.MD5, "strategy_id", strategy.ID)
+	if isDup {
+		applog.Logger.Info("upload: dedup hit", "request_id", rid, "handler", "UploadImage", "user_id", userID,
+			"image_id", imageRecord.ID, "ref_image_id", *imageRecord.RefImageID, "md5", imageInfo.MD5)
+	} else {
+		applog.Logger.Info("upload: success", "request_id", rid, "handler", "UploadImage", "user_id", userID,
+			"image_id", imageRecord.ID, "pathname", pathname, "md5", imageInfo.MD5, "strategy_id", strategy.ID)
+	}
 
-	// 构建响应数据，包含用户组配置信息供前端使用
+	// 构建响应数据
 	response := &UploadImageResponse{
 		Status:  true,
 		Message: "上传成功",
@@ -219,7 +224,7 @@ func UploadImageFromURL(c *gin.Context) {
 		return
 	}
 
-	policy, ok := readGlobalUploadPolicy(c)
+	policy, ok := readUserUploadPolicy(c, userID.(uint))
 	if !ok {
 		return
 	}
@@ -235,37 +240,10 @@ func UploadImageFromURL(c *gin.Context) {
 		return
 	}
 
-	// 下载图片
-	resp, err := http.Get(requestData.URL)
+	// 下载图片（带协议校验、超时与大小限制）
+	imageData, contentType, err := fetchRemoteImage(requestData.URL, policy.MaximumFileSize)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "下载图片失败: " + err.Error()})
-		return
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("下载图片失败，状态码: %d", resp.StatusCode)})
-		return
-	}
-
-	// 检查Content-Type
-	contentType := resp.Header.Get("Content-Type")
-	if !strings.HasPrefix(contentType, "image/") {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "URL不是有效的图片"})
-		return
-	}
-
-	// 检查文件大小
-	contentLength := resp.ContentLength
-	if contentLength > int64(policy.MaximumFileSize*1024) {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("文件大小超过限制（%dKB）", policy.MaximumFileSize)})
-		return
-	}
-
-	// 读取图片数据
-	imageData, err := io.ReadAll(resp.Body)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "读取图片数据失败"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -315,7 +293,7 @@ func UploadImageFromURL(c *gin.Context) {
 	if requestData.StrategyID > 0 {
 		strategyIDRaw = strconv.Itoa(requestData.StrategyID)
 	}
-	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userConfig, strategyIDRaw)
+	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, strategyIDRaw)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
@@ -361,8 +339,9 @@ func UploadImageFromURL(c *gin.Context) {
 	// 根据用户配置设置图片权限
 	model.SetImagePermissionFromUserConfig(imageRecord, userConfig)
 
-	// 保存到数据库
-	if err := model.CreateImage(model.DB, imageRecord); err != nil {
+	// 保存到数据库（含MD5去重）
+	imageRecord, _, err = createImageRecordWithDedup(imageRecord)
+	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片记录失败"})
 		return
 	}
@@ -370,7 +349,7 @@ func UploadImageFromURL(c *gin.Context) {
 	// 更新用户图片数量
 	model.IncrementUserImageCount(model.DB, userID.(uint))
 
-	pathname := normalizePathnameForLinks(imageInfo.Path)
+	pathname := normalizePathnameForLinks(imageRecord.Path)
 	links := utils.GenerateImageLinksWithConfig(pathname, imageInfo.OriginName, utilsConfig)
 
 	response := &UploadImageResponse{
@@ -579,7 +558,7 @@ func GetUserConfig(c *gin.Context) {
 	c.JSON(http.StatusOK, response)
 }
 
-// GetImages 获取用户图片列表
+// GetImages 获取用户图片列表（分页）
 func GetImages(c *gin.Context) {
 	// 获取当前用户ID
 	userID, exists := c.Get("userID")
@@ -602,14 +581,14 @@ func GetImages(c *gin.Context) {
 		limit = 500
 	}
 
-	// 获取用户的图片列表
-	images, err := model.GetImagesByUserID(model.DB, userID.(uint))
+	// 分页获取用户的图片列表
+	images, total, err := model.GetImagesByUserIDPaginated(model.DB, userID.(uint), page, limit)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "获取图片列表失败"})
 		return
 	}
 
-	// 构建响应数据（按每张图的 strategy_id 解析策略，无效则回退到首个已配置策略，与上传/分享/二维码一致）
+	// 构建响应数据
 	var imageDataList []ImageData
 	for i := range images {
 		img := &images[i]
@@ -645,13 +624,24 @@ func GetImages(c *gin.Context) {
 		imageDataList = append(imageDataList, imageData)
 	}
 
-	response := &GetImagesResponse{
-		Status:  true,
-		Message: "获取成功",
-		Data:    imageDataList,
-	}
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"message": "获取成功",
+		"data":    imageDataList,
+		"total":   total,
+		"page":    page,
+		"limit":   limit,
+	})
+}
 
-	c.JSON(http.StatusOK, response)
+// isAdminRequest 判断当前请求是否来自管理员（由 JWTOrBearerAuthMiddleware 写入上下文）
+func isAdminRequest(c *gin.Context) bool {
+	if v, ok := c.Get("isAdmin"); ok {
+		if n, ok := v.(uint); ok {
+			return n == 1
+		}
+	}
+	return false
 }
 
 // DeleteImage 删除图片
@@ -678,8 +668,8 @@ func DeleteImage(c *gin.Context) {
 		return
 	}
 
-	// 检查权限（只能删除自己的图片）
-	if image.UserID != userID.(uint) {
+	// 检查权限（只能删除自己的图片，管理员可删除任意图片）
+	if image.UserID != userID.(uint) && !isAdminRequest(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "无权限删除此图片"})
 		return
 	}
@@ -690,8 +680,8 @@ func DeleteImage(c *gin.Context) {
 		return
 	}
 
-	// 减少用户图片数量
-	if err := model.DecrementUserImageCount(model.DB, userID.(uint)); err != nil {
+	// 减少图片所有者的图片数量
+	if err := model.DecrementUserImageCount(model.DB, image.UserID); err != nil {
 		// 这里只是记录错误，不影响删除成功
 	}
 
@@ -746,8 +736,8 @@ func BatchDeleteImages(c *gin.Context) {
 			continue
 		}
 
-		// 检查权限（只能删除自己的图片）
-		if image.UserID != userID.(uint) {
+		// 检查权限（只能删除自己的图片，管理员可删除任意图片）
+		if image.UserID != userID.(uint) && !isAdminRequest(c) {
 			failedIDs = append(failedIDs, imageID)
 			continue
 		}
@@ -758,8 +748,8 @@ func BatchDeleteImages(c *gin.Context) {
 			continue
 		}
 
-		// 减少用户图片数量
-		model.DecrementUserImageCount(model.DB, userID.(uint))
+		// 减少图片所有者的图片数量
+		model.DecrementUserImageCount(model.DB, image.UserID)
 		successCount++
 	}
 
@@ -819,8 +809,8 @@ func RenameImage(c *gin.Context) {
 		return
 	}
 
-	// 检查权限（只能重命名自己的图片）
-	if image.UserID != userID.(uint) {
+	// 检查权限（只能重命名自己的图片，管理员可重命名任意图片）
+	if image.UserID != userID.(uint) && !isAdminRequest(c) {
 		c.JSON(http.StatusForbidden, gin.H{
 			"status":  false,
 			"message": "无权限重命名此图片",

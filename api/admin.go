@@ -2,10 +2,12 @@ package api
 
 import (
 	"Slink/model"
+	"Slink/utils"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -123,6 +125,58 @@ func UpdateConfigs(c *gin.Context) {
 	})
 }
 
+// AdminGetImages 获取所有图片列表（管理员）
+func AdminGetImages(c *gin.Context) {
+	page, _ := strconv.Atoi(c.DefaultQuery("page", "1"))
+	limit, _ := strconv.Atoi(c.DefaultQuery("limit", "20"))
+	if page < 1 { page = 1 }
+	if limit < 1 { limit = 20 }
+	if limit > 500 { limit = 500 }
+
+	images, total, err := model.GetAllImagesPaginated(model.DB, page, limit)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "获取图片列表失败"})
+		return
+	}
+
+	var list []map[string]interface{}
+	for i := range images {
+		img := &images[i]
+		// 生成访问链接与策略名，供管理端预览/复制（与图片列表接口保持一致）
+		strategyName := ""
+		var links map[string]string
+		if utilsConfig, err := strategyUtilsConfigForStoredImage(model.DB, img); err == nil {
+			pathname := normalizePathnameForLinks(img.Path)
+			links = utils.GenerateImageLinksWithConfig(pathname, img.OriginName, utilsConfig)
+		}
+		if st, err := model.GetStrategyForStoredImage(model.DB, img.StrategyID); err == nil {
+			strategyName = st.Name
+		}
+		list = append(list, map[string]interface{}{
+			"id":            img.ID,
+			"user_id":       img.UserID,
+			"pathname":      normalizePathnameForLinks(img.Path),
+			"origin_name":   img.OriginName,
+			"size_bytes":    img.Size,
+			"size":          float64(img.Size) / (1024 * 1024),
+			"mimetype":      img.Mimetype,
+			"permission":    img.Permissions,
+			"strategy_id":   img.StrategyID,
+			"strategy_name": strategyName,
+			"links":         links,
+			"created_at":    img.CreatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status": true,
+		"data":   list,
+		"total":  total,
+		"page":   page,
+		"limit":  limit,
+	})
+}
+
 // GetSystemStats 获取系统统计信息
 func GetSystemStats(c *gin.Context) {
 	db := model.DB
@@ -210,5 +264,95 @@ func GetSystemStats(c *gin.Context) {
 		"status":  true,
 		"message": "获取成功",
 		"data":    stats,
+	})
+}
+
+// GetUserStrategies 获取用户分配的策略列表
+func GetUserStrategies(c *gin.Context) {
+	userIDStr := c.Param("id")
+	var uid uint
+	if _, err := fmt.Sscanf(userIDStr, "%d", &uid); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "无效的用户ID"})
+		return
+	}
+
+	strategies, err := model.GetUserStrategies(model.DB, uid)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "获取用户策略失败", "error": err.Error()})
+		return
+	}
+
+	strategyIDs, _ := model.GetStrategyIDsByUserID(model.DB, uid)
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"message": "获取成功",
+		"data": gin.H{
+			"strategies":   strategies,
+			"strategy_ids": strategyIDs,
+		},
+	})
+}
+
+// AssignStrategiesToUser 为用户分配策略
+func AssignStrategiesToUser(c *gin.Context) {
+	userIDStr := c.Param("id")
+	var uid uint
+	if _, err := fmt.Sscanf(userIDStr, "%d", &uid); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "无效的用户ID"})
+		return
+	}
+
+	var req struct {
+		// 允许传空数组以清空用户的全部分配策略
+		StrategyIDs []uint `json:"strategy_ids"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "请求参数错误"})
+		return
+	}
+
+	// 先移除用户所有策略，再重新分配
+	if err := model.DeleteUserStrategiesByUserID(model.DB, uid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "清除用户策略失败"})
+		return
+	}
+
+	for _, sid := range req.StrategyIDs {
+		if err := model.AddStrategyToUser(model.DB, uid, sid); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "分配策略失败", "error": err.Error()})
+			return
+		}
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"message": "策略分配成功",
+	})
+}
+
+// RemoveUserStrategy 移除用户的某个策略
+func RemoveUserStrategy(c *gin.Context) {
+	userIDStr := c.Param("id")
+	strategyIDStr := c.Param("strategyId")
+
+	var uid, sid uint
+	if _, err := fmt.Sscanf(userIDStr, "%d", &uid); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "无效的用户ID"})
+		return
+	}
+	if _, err := fmt.Sscanf(strategyIDStr, "%d", &sid); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"status": false, "message": "无效的策略ID"})
+		return
+	}
+
+	if err := model.RemoveStrategyFromUser(model.DB, uid, sid); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"status": false, "message": "移除策略失败"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"status":  true,
+		"message": "移除成功",
 	})
 }

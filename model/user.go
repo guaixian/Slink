@@ -1,7 +1,6 @@
 package model
 
 import (
-	"Slink/utils"
 	"time"
 
 	"github.com/glebarez/sqlite"
@@ -23,8 +22,9 @@ type User struct {
 	Capacity     uint      `gorm:"not null;default:0;comment:存储容量限制(字节)"`
 	Configs      string    `gorm:"type:text;not null;comment:用户配置(JSON格式)"`
 	ImageNums    uint      `gorm:"not null;default:0;comment:图片数量"`
-	RegisteredIP string    `gorm:"not null;default:'';comment:注册IP地址"`
-	CreatedAt    time.Time `gorm:"autoCreateTime;comment:创建时间"`
+	PolicyGroupID uint      `gorm:"not null;default:0;comment:上传策略组ID"`
+	RegisteredIP  string    `gorm:"not null;default:'';comment:注册IP地址"`
+	CreatedAt     time.Time `gorm:"autoCreateTime;comment:创建时间"`
 	UpdatedAt    time.Time `gorm:"autoUpdateTime;comment:更新时间"`
 }
 
@@ -193,6 +193,9 @@ func InitDB() error {
 	if err := db.AutoMigrate(&GroupStrategy{}); err != nil {
 		return err
 	}
+	if err := db.AutoMigrate(&UserStrategy{}); err != nil {
+		return err
+	}
 	if err := db.AutoMigrate(&Strategies{}); err != nil {
 		return err
 	}
@@ -201,6 +204,22 @@ func InitDB() error {
 	}
 	// 自动迁移 Share 表
 	if err := db.AutoMigrate(&Share{}); err != nil {
+		return err
+	}
+	// 自动迁移 GlobalUploadPolicy 表（兼容旧数据）
+	if err := db.AutoMigrate(&GlobalUploadPolicy{}); err != nil {
+		return err
+	}
+	// 自动迁移 UploadPolicyGroup 表
+	if err := db.AutoMigrate(&UploadPolicyGroup{}); err != nil {
+		return err
+	}
+	// 初始化默认上传策略组
+	if err := InitDefaultUploadPolicyGroup(db); err != nil {
+		return err
+	}
+	// 迁移旧上传策略数据
+	if err := MigrateLegacyUploadPolicy(db); err != nil {
 		return err
 	}
 	// 初始化默认配置
@@ -219,39 +238,10 @@ func InitDB() error {
 	if err := migrateExistingUsers(db); err != nil {
 		return err
 	}
-	// 创建默认管理员账号
-	if err := createDefaultAdmin(db); err != nil {
-		return err
-	}
+	// 不自动创建固定口令的默认管理员（admin@slink.org/123456 属于后门账号），
+	// 管理员由初始化向导 /api/init/setup 创建。
 	return nil
 }
 
-// createDefaultAdmin 创建默认管理员账号
-func createDefaultAdmin(db *gorm.DB) error {
-	var count int64
-	db.Model(&User{}).Where("email = ?", "admin@slink.org").Count(&count)
-	if count == 0 {
-		hash, err := utils.HashPassword("123456")
-		if err != nil {
-			return err
-		}
-
-		// 创建默认配置
-		defaultConfig := GetDefaultUserConfig()
-		configJSON, err := defaultConfig.ToJSON()
-		if err != nil {
-			return err
-		}
-
-		admin := User{
-			Email:        "admin@slink.org",
-			Password:     hash,
-			GroupID:      1, // 直接设置为默认用户组ID
-			IsAdmin:      1,
-			Configs:      configJSON,  // 设置默认配置
-			RegisteredIP: "127.0.0.1", // 默认管理员IP
-		}
-		return db.Create(&admin).Error
-	}
-	return nil
-}
+// createDefaultAdmin 曾用于创建 admin@slink.org/123456 默认管理员。
+// 固定弱口令账号属于后门，已停用；管理员由 PerformInitialSetup 创建。

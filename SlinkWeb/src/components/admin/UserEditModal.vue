@@ -37,6 +37,28 @@
           <input type="password" v-model="formData.newPassword" class="form-input" placeholder="不修改请留空" />
         </div>
         
+        <!-- 存储策略分配 -->
+        <div class="form-group" v-if="allStrategies.length > 0">
+          <label>分配存储策略</label>
+          <p class="status-description">选择该用户可使用的上传策略</p>
+          <div v-if="loadingStrategies" class="text-sm text-gray-500">加载策略中...</div>
+          <div v-else class="strategy-list">
+            <label
+              v-for="strategy in allStrategies"
+              :key="strategy.id"
+              class="strategy-item"
+            >
+              <input
+                type="checkbox"
+                :checked="assignedStrategyIds.includes(strategy.id)"
+                @change="toggleStrategy(strategy.id)"
+              />
+              <span class="strategy-name">{{ strategy.name }}</span>
+              <span class="strategy-desc">{{ strategy.introduction }}</span>
+            </label>
+          </div>
+        </div>
+
         <div class="form-group">
           <label>账号状态</label>
           <p class="status-description">冻结账号后将无法登录系统</p>
@@ -63,14 +85,23 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, defineProps, defineEmits } from 'vue'
+import { ref, reactive, onMounted } from 'vue'
+import { adminAPI, systemAPI } from '../../api'
 
 interface User {
+  id?: number
   username: string
   account: string
   roleGroup: string
   totalCapacity: string | number
   status: string
+}
+
+interface Strategy {
+  id: number
+  name: string
+  introduction: string
+  key: string
 }
 
 const props = defineProps<{
@@ -87,18 +118,67 @@ const formData = reactive({
   roleGroup: props.user?.roleGroup || '系统默认组&游客组',
   account: props.user?.account || '',
   username: props.user?.username || '',
-  totalCapacity: props.user?.totalCapacity ? 
-    (typeof props.user.totalCapacity === 'string' ? 
+  totalCapacity: props.user?.totalCapacity ?
+    (typeof props.user.totalCapacity === 'string' ?
       parseInt(props.user.totalCapacity.replace(/[^\d]/g, '')) : (props.user.totalCapacity as number)) : 0,
   newPassword: '',
   status: props.user?.status || '正常'
+})
+
+// 策略管理
+const allStrategies = ref<Strategy[]>([])
+const assignedStrategyIds = ref<number[]>([])
+const loadingStrategies = ref(false)
+
+const loadStrategies = async () => {
+  loadingStrategies.value = true
+  try {
+    const [strategiesRes, userStrategiesRes] = await Promise.all([
+      systemAPI.getStorageStrategies(),
+      props.user.id ? adminAPI.getUserStrategies(props.user.id) : Promise.resolve(null)
+    ])
+    if (strategiesRes.data.status) {
+      allStrategies.value = strategiesRes.data.data || []
+    }
+    if (userStrategiesRes?.data?.status) {
+      assignedStrategyIds.value = userStrategiesRes.data.data?.strategy_ids || []
+    }
+  } catch (e) {
+    console.error('加载策略失败:', e)
+  } finally {
+    loadingStrategies.value = false
+  }
+}
+
+const toggleStrategy = (strategyId: number) => {
+  const idx = assignedStrategyIds.value.indexOf(strategyId)
+  if (idx >= 0) {
+    assignedStrategyIds.value.splice(idx, 1)
+  } else {
+    assignedStrategyIds.value.push(strategyId)
+  }
+}
+
+onMounted(() => {
+  if (props.user.id) {
+    loadStrategies()
+  }
 })
 
 const handleClose = () => {
   emit('close')
 }
 
-const handleSave = () => {
+const handleSave = async () => {
+  // 保存策略分配
+  if (props.user.id && assignedStrategyIds.value.length > 0) {
+    try {
+      await adminAPI.assignStrategiesToUser(props.user.id, assignedStrategyIds.value)
+    } catch (e) {
+      console.error('保存策略失败:', e)
+    }
+  }
+
   const updatedUser = {
     ...(props.user || {}),
     ...formData
@@ -284,6 +364,48 @@ const handleSave = () => {
 
 .btn-primary:hover {
   background-color: #2563eb;
+}
+
+.strategy-list {
+  margin-top: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.strategy-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background-color 0.2s;
+}
+
+.strategy-item:hover {
+  background-color: #f9fafb;
+}
+
+.strategy-item input[type="checkbox"] {
+  flex-shrink: 0;
+}
+
+.strategy-name {
+  font-weight: 500;
+  font-size: 14px;
+  color: #374151;
+  flex-shrink: 0;
+}
+
+.strategy-desc {
+  font-size: 12px;
+  color: #9ca3af;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 /* 响应式设计 */

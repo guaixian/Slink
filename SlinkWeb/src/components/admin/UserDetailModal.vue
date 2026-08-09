@@ -95,10 +95,12 @@ const handleClose = () => {
   emit('close')
 }
 
+// capacity 单位为字节，0 表示无限制
 const formatCapacity = (capacity: number) => {
-  if (capacity === 0) return '无限制'
-  if (capacity < 1024) return `${capacity.toFixed(2)} MB`
-  return `${(capacity / 1024).toFixed(2)} GB`
+  if (!capacity) return '无限制'
+  const mb = capacity / (1024 * 1024)
+  if (mb < 1024) return `${mb.toFixed(2)} MB`
+  return `${(mb / 1024).toFixed(2)} GB`
 }
 
 const formatDate = (dateStr: string) => {

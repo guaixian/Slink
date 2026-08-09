@@ -29,6 +29,7 @@ interface UserInfo {
   user_id: number
   account: string
   name: string
+  capacity: number
   created_at: string
   image_nums: number
   is_admin: boolean
@@ -145,9 +146,9 @@ export const imageAPI = {
     return http.uploadMultiple<ApiResponse<ImageInfo[]>>('/api/image/upload-multiple', files, onProgress, 'image')
   },
 
-  // 获取图片列表
+  // 获取图片列表（分页）
   getImageList: (page: number = 1, limit: number = 20) => {
-    return http.get<ApiResponse<ImageInfo[]>>(`/api/image/list?page=${page}&limit=${limit}`)
+    return http.get<ApiResponse<ImageInfo[]> & { total: number; page: number; limit: number }>(`/api/image/list?page=${page}&limit=${limit}`)
   },
 
   // 删除图片
@@ -253,6 +254,37 @@ export const adminAPI = {
     return http.put<ApiResponse<any>>('/api/admin/configs', configs)
   },
 
+  getUserStrategies: (userId: number) => {
+    return http.get<ApiResponse<{ strategies: StorageStrategy[]; strategy_ids: number[] }>>(`/api/admin/users/${userId}/strategies`)
+  },
+  assignStrategiesToUser: (userId: number, strategyIds: number[]) => {
+    return http.post<ApiResponse<any>>(`/api/admin/users/${userId}/strategies`, { strategy_ids: strategyIds })
+  },
+  removeUserStrategy: (userId: number, strategyId: number) => {
+    return http.delete<ApiResponse<any>>(`/api/admin/users/${userId}/strategies/${strategyId}`)
+  },
+  // 上传策略组
+  getPolicyGroups: () => {
+    return http.get<ApiResponse<any[]>>('/api/admin/policy-groups')
+  },
+  createPolicyGroup: (data: { name: string; description: string; config: any }) => {
+    return http.post<ApiResponse<any>>('/api/admin/policy-groups', data)
+  },
+  updatePolicyGroup: (id: number, data: { name?: string; description?: string; config?: any }) => {
+    return http.put<ApiResponse<any>>(`/api/admin/policy-groups/${id}`, data)
+  },
+  setDefaultPolicyGroup: (id: number) => {
+    return http.put<ApiResponse<any>>(`/api/admin/policy-groups/${id}/set-default`)
+  },
+  deletePolicyGroup: (id: number) => {
+    return http.delete<ApiResponse<any>>(`/api/admin/policy-groups/${id}`)
+  },
+  getPolicyGroup: (id: number) => {
+    return http.get<ApiResponse<any>>(`/api/admin/policy-groups/${id}`)
+  },
+  setUserPolicyGroup: (userId: number, policyGroupId: number) => {
+    return http.put<ApiResponse<any>>(`/api/admin/users/${userId}/policy-group`, { policy_group_id: policyGroupId })
+  },
   getUploadPolicy: () => {
     return http.get<ApiResponse<any>>('/api/admin/upload-policy')
   },
@@ -366,6 +398,10 @@ export const initAPI = {
     database_config: any
     cache_type: string
     cache_path?: string
+    redis_host?: string
+    redis_port?: number
+    redis_password?: string
+    redis_db?: number
   }) => {
     return http.post<ApiResponse<any>>('/api/init/setup', data)
   },
@@ -373,6 +409,11 @@ export const initAPI = {
   // 测试数据库连接
   testDatabaseConnection: (config: any) => {
     return http.post<ApiResponse<{ success: boolean }>>('/api/init/test-db', config)
+  },
+
+  // 测试Redis连接
+  testRedisConnection: (config: { host: string; port: number; password: string; db: number }) => {
+    return http.post<ApiResponse<{ success: boolean }>>('/api/init/test-redis', config)
   }
 }
 

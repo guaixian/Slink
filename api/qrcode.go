@@ -3,7 +3,7 @@ package api
 import (
 	"Slink/model"
 	"Slink/utils"
-	"bytes"
+	"encoding/base64"
 	"net/http"
 	"strconv"
 
@@ -169,7 +169,7 @@ func GenerateQRCodeBase64(c *gin.Context) {
 	}
 
 	// 转换为Base64
-	base64Str := "data:image/png;base64," + bytes.NewBuffer(pngBytes).String()
+	base64Str := "data:image/png;base64," + base64.StdEncoding.EncodeToString(pngBytes)
 
 	c.JSON(http.StatusOK, gin.H{
 		"status":  true,
