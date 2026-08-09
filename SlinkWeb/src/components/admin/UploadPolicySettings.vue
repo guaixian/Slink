@@ -89,12 +89,6 @@
       </section>
 
       <section class="settings-section">
-        <h2 class="section-title">图片保存</h2>
-        <label class="field block">保存格式 <input v-model="imageFormatInput" type="text" class="text-input" /></label>
-        <label class="field block mt-3">JPEG质量 <input v-model.number="policy.image_save_quality" type="number" min="0" max="100" class="text-input" /></label>
-      </section>
-
-      <section class="settings-section">
         <h2 class="section-title">原图保护</h2>
         <label class="field">启用 <select v-model.number="policy.is_enable_original_protection" class="select-input"><option :value="0">否</option><option :value="1">是</option></select></label>
         <label class="field wide mt-3">缓存TTL（秒） <input v-model.number="policy.image_cache_ttl" type="number" min="0" class="text-input" /></label>
@@ -177,12 +171,11 @@ const policy = reactive({
   limit_per_week: 99999, limit_per_month: 99999,
   maximum_file_size: 15120, concurrent_upload_num: 10,
   file_naming_rule: '{uniqid}', path_naming_rule: '{Y}/{m}/{d}',
-  image_save_quality: 75, is_enable_original_protection: 0,
+  is_enable_original_protection: 0,
   image_cache_ttl: 2626560, is_enable_watermark: 0
 })
 
 const suffixesInput = ref('jpeg,jpg,png,gif,tif,bmp,ico,psd,webp')
-const imageFormatInput = ref('')
 
 const positions = [
   { v: 'top-left', label: '左上' }, { v: 'top-right', label: '右上' },
@@ -201,11 +194,10 @@ function resetForm() {
     limit_per_minute: 99999, limit_per_hour: 99997, limit_per_day: 99999,
     limit_per_week: 99999, limit_per_month: 99999, maximum_file_size: 15120,
     concurrent_upload_num: 10, file_naming_rule: '{uniqid}', path_naming_rule: '{Y}/{m}/{d}',
-    image_save_quality: 75, is_enable_original_protection: 0,
+    is_enable_original_protection: 0,
     image_cache_ttl: 2626560, is_enable_watermark: 0
   })
   suffixesInput.value = 'jpeg,jpg,png,gif,tif,bmp,ico,psd,webp'
-  imageFormatInput.value = ''
   wm.mode = 1; wm.driver = 'font'
   Object.assign(wm.font, { x: 10, y: 10, font: '', size: 24, text: '', angle: 0, color: '#ffffff', position: 'bottom-right' })
   Object.assign(wm.image, { x: 10, y: 10, image: '', width: 0, height: 0, rotate: 0, opacity: 100, position: 'bottom-right' })
@@ -218,11 +210,9 @@ function loadFromGroupConfig(d: Record<string, unknown>) {
     limit_per_month: d.limit_per_month ?? 0, maximum_file_size: d.maximum_file_size ?? 0,
     concurrent_upload_num: d.concurrent_upload_num ?? 0,
     file_naming_rule: d.file_naming_rule ?? '', path_naming_rule: d.path_naming_rule ?? '',
-    image_save_quality: d.image_save_quality ?? 75,
     is_enable_original_protection: d.is_enable_original_protection ?? 0,
     image_cache_ttl: d.image_cache_ttl ?? 0, is_enable_watermark: d.is_enable_watermark ?? 0
   })
-  imageFormatInput.value = (d.image_save_format as string) ?? ''
   const suffixes = d.accepted_file_suffixes as string[] | undefined
   suffixesInput.value = suffixes?.length ? suffixes.join(',') : ''
 
@@ -288,8 +278,6 @@ function buildPayload() {
     limit_per_month: policy.limit_per_month, maximum_file_size: policy.maximum_file_size,
     concurrent_upload_num: policy.concurrent_upload_num,
     file_naming_rule: policy.file_naming_rule, path_naming_rule: policy.path_naming_rule,
-    image_save_format: imageFormatInput.value.trim() || null,
-    image_save_quality: policy.image_save_quality,
     accepted_file_suffixes: accepted,
     is_enable_original_protection: policy.is_enable_original_protection,
     image_cache_ttl: policy.image_cache_ttl,
@@ -393,6 +381,7 @@ onMounted(loadGroups)
 .save-button:disabled { opacity: 0.6; cursor: not-allowed; }
 .reset-button { padding: 10px 20px; background: #f3f4f6; color: #374151; border: none; border-radius: 8px; cursor: pointer; }
 
+.field-hint { font-size: 12px; color: #9ca3af; margin-top: 4px; }
 .mt-3 { margin-top: 12px; }
 .mt-4 { margin-top: 16px; }
 .mb-4 { margin-bottom: 16px; }

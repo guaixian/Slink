@@ -92,6 +92,9 @@ func ServeProtectedImage(c *gin.Context) {
 		return
 	}
 
+	// 图片内容按 UUID 命名、永不变更，可安全长缓存，显著减少重复请求
+	c.Header("Cache-Control", "public, max-age=604800, immutable")
+
 	// 提供文件
 	c.File(fullPath)
 }

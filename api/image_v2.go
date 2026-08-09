@@ -90,23 +90,28 @@ func UploadImageV2(c *gin.Context) {
 		return
 	}
 
-	// 检查用户存储容量
-	if !checkUserCapacity(c, user, file.Size) {
-		applog.Logger.Warn("upload v2: capacity exceeded", "request_id", rid, "user_id", userID, "size", file.Size)
-		return
-	}
-
 	userConfig, err := user.GetUserConfig()
 	if err != nil {
 		userConfig = model.GetDefaultUserConfig()
 	}
 
+	// 读取上传内容（大小已被策略上限约束，可安全读入内存）
+	data, err := readUploadedFile(file)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "读取上传文件失败"})
+		return
+	}
+
+	// 原样存储：落盘文件与原图格式/MD5 完全一致；容量按原图大小计
+	if !checkUserCapacity(c, user, int64(len(data))) {
+		applog.Logger.Warn("upload v2: capacity exceeded", "request_id", rid, "user_id", userID, "size", len(data))
+		return
+	}
+
 	// 落盘前按内容 MD5 去重：重复图片只建引用记录，不再写入存储
-	if md5Str, herr := hashMultipartFileMD5(file); herr == nil {
-		if attemptDedupUpload(c, md5Str, userID.(uint), file.Filename, userConfig) {
-			applog.Logger.Info("upload v2: dedup hit (pre-save)", "request_id", rid, "user_id", userID, "md5", md5Str)
-			return
-		}
+	if attemptDedupUpload(c, hashBytesMD5(data), userID.(uint), file.Filename, userConfig) {
+		applog.Logger.Info("upload v2: dedup hit (pre-save)", "request_id", rid, "user_id", userID)
+		return
 	}
 
 	strategy, strategyConfigData, err := resolveUploadStrategy(model.DB, userID.(uint), userConfig, c.PostForm("strategy_id"))
@@ -121,7 +126,7 @@ func UploadImageV2(c *gin.Context) {
 	storageConfig := convertStrategyToStorageConfig(strategyConfigData)
 
 	// 使用存储策略保存图片
-	imageInfo, err := utils.SaveImageWithStorage(file, userID.(uint), policy.PathNamingRule, policy.FileNamingRule, storageConfig)
+	imageInfo, err := utils.SaveImageBytesWithStorage(data, file.Filename, userID.(uint), policy.PathNamingRule, policy.FileNamingRule, storageConfig)
 	if err != nil {
 		applog.Logger.Error("upload v2: save storage failed", "request_id", rid, "user_id", userID, "strategy_id", strategy.ID, "error", err)
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "保存图片失败: " + err.Error()})
@@ -286,15 +291,15 @@ func UploadImageFromURLV2(c *gin.Context) {
 		filename = "image" + ext
 	}
 
-	// 检查用户存储容量
-	if !checkUserCapacity(c, user, int64(len(imageData))) {
-		applog.Logger.Warn("upload url v2: capacity exceeded", "request_id", rid, "user_id", userID)
-		return
-	}
-
 	userConfig, err := user.GetUserConfig()
 	if err != nil {
 		userConfig = model.GetDefaultUserConfig()
+	}
+
+	// 原样存储：落盘文件与原图格式/MD5 完全一致；容量按原图大小计
+	if !checkUserCapacity(c, user, int64(len(imageData))) {
+		applog.Logger.Warn("upload url v2: capacity exceeded", "request_id", rid, "user_id", userID)
+		return
 	}
 
 	// 落盘前按内容 MD5 去重：重复图片只建引用记录，不再写入存储

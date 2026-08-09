@@ -106,18 +106,14 @@ func hashBytesMD5(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// hashMultipartFileMD5 流式计算上传文件的 MD5，用于落盘前的去重判断
-func hashMultipartFileMD5(file *multipart.FileHeader) (string, error) {
+// readUploadedFile 读取上传文件的全部字节（大小已被策略上限约束，可安全读入内存）
+func readUploadedFile(file *multipart.FileHeader) ([]byte, error) {
 	src, err := file.Open()
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer src.Close()
-	h := md5.New()
-	if _, err := io.Copy(h, src); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(h.Sum(nil)), nil
+	return io.ReadAll(src)
 }
 
 // writeUploadSuccess 统一的上传成功响应

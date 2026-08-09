@@ -193,7 +193,7 @@ func NewDefaultGroupConfig() GroupConfig {
 		FileNamingRule:             "{uniqid}",
 		PathNamingRule:             "{Y}/{m}/{d}",
 		ImageSaveFormat:            nil,
-		ImageSaveQuality:           75,
+		ImageSaveQuality:           0, // 0=不处理,原样存储(与原图 MD5 一致);1~99 仅对 JPEG/格式转换生效
 		AcceptedFileSuffixes:       []string{"jpeg", "jpg", "png", "gif", "tif", "bmp", "ico", "psd", "webp"},
 		IsEnableOriginalProtection: 0,
 		ImageCacheTTL:              2626560,
