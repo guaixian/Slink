@@ -137,10 +137,29 @@
                     >
                       <i class="fa fa-times"></i>
                     </button>
+                    <button
+                        v-if="item.status === 'error'"
+                        class="action-btn upload-btn"
+                        @click="retryUpload(item)"
+                    >
+                      <i class="fa fa-refresh"></i>
+                      <span class="btn-text">重试</span>
+                    </button>
+                    <button
+                        v-if="item.status === 'error' || item.status === 'success'"
+                        class="action-btn cancel-btn"
+                        @click="removeFromQueue(item)"
+                    >
+                      <i class="fa fa-times"></i>
+                      <span class="btn-text">移除</span>
+                    </button>
                   </div>
                   <div class="item-row">
                     <span class="status-text" :class="getStatusClass(item.status)">
                       {{ getStatusText(item.status) }}
+                    </span>
+                    <span v-if="item.status === 'error' && item.error" class="error-text" :title="item.error">
+                      {{ item.error }}
                     </span>
                     <span class="item-size">
                       {{ item.result ? formatMBSize(item.result.size) : formatFileSize(item.file.size) }}
@@ -400,6 +419,8 @@ const handleFileSelect = (event: Event) => {
   if (target.files && target.files.length > 0) {
     addFilesToQueue(Array.from(target.files))
   }
+  // 清空 value，否则失败后重新选择同一个文件不会触发 change
+  target.value = ''
 }
 
 // 处理粘贴事件
@@ -529,15 +550,25 @@ const uploadFile = async (item: any) => {
       }
     } else {
       item.status = 'error'
-      item.error = response.data.message
-      showErrorMessage(response.data.message || '上传失败')
+      item.error = response.data.message || '上传失败'
+      showErrorMessage(item.error)
     }
-  } catch (error) {
+  } catch (error: any) {
     item.status = 'error'
-    item.error = '上传失败'
-    showErrorMessage('上传失败，请重试')
+    // 优先展示后端返回的具体原因（超限/类型不支持等）
+    item.error = error.response?.data?.error || error.response?.data?.message || '上传失败，请重试'
+    showErrorMessage(item.error)
     console.error('上传失败:', error)
   }
+}
+
+// 重试上传：先复位为等待状态再重新走上传流程（uploadFile 只接受 waiting 状态）
+const retryUpload = (item: any) => {
+  if (item.status !== 'error') return
+  item.error = undefined
+  item.progress = 0
+  item.status = 'waiting'
+  uploadFile(item)
 }
 
 // 从队列移除
@@ -1108,6 +1139,15 @@ const copyLink = async () => {
 
 .status-error {
   color: #dc2626;
+}
+
+.error-text {
+  font-size: 12px;
+  color: #dc2626;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 40%;
 }
 
 .status-uploading {
