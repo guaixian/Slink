@@ -72,6 +72,34 @@ func fetchRemoteImage(rawURL string, maxSizeKB uint) ([]byte, string, error) {
 }
 
 
+// formatBytesShort 容量提示用的紧凑格式化
+func formatBytesShort(n int64) string {
+	if n < 1024*1024 {
+		return fmt.Sprintf("%.1fKB", float64(n)/1024)
+	}
+	if n < 1024*1024*1024 {
+		return fmt.Sprintf("%.2fMB", float64(n)/(1024*1024))
+	}
+	return fmt.Sprintf("%.2fGB", float64(n)/(1024*1024*1024))
+}
+
+// checkUserCapacity 校验用户剩余存储空间是否容得下本次上传;Capacity 为 0 表示无限制
+func checkUserCapacity(c *gin.Context, user *model.User, incomingBytes int64) bool {
+	if user.Capacity == 0 {
+		return true
+	}
+	var used int64
+	model.DB.Model(&model.Images{}).Where("user_id = ?", user.ID).Select("COALESCE(SUM(size), 0)").Scan(&used)
+	if used+incomingBytes > int64(user.Capacity) {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": fmt.Sprintf("存储空间不足（已用 %s / 上限 %s）",
+				formatBytesShort(used), formatBytesShort(int64(user.Capacity))),
+		})
+		return false
+	}
+	return true
+}
+
 // hashBytesMD5 计算字节数据的 MD5（URL 上传的内存数据去重用）
 func hashBytesMD5(data []byte) string {
 	sum := md5.Sum(data)

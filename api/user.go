@@ -106,8 +106,10 @@ func Register(c *gin.Context) {
 		GroupID:       1,
 		PolicyGroupID: defaultPolicyGroupID,
 		IsAdmin:       0,
-		Configs:       configJSON,
-		RegisteredIP:  c.ClientIP(),
+		// 应用系统设置中的"新注册用户默认存储空间"(字节,0 表示无限制)
+		Capacity:     uint(model.GetDefaultUserCapacityBytes(model.DB)),
+		Configs:      configJSON,
+		RegisteredIP: c.ClientIP(),
 	}
 
 	if err := model.CreateUser(model.DB, &user); err != nil {

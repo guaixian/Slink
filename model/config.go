@@ -1,6 +1,8 @@
 package model
 
 import (
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
@@ -133,6 +135,21 @@ var defaultConfigs = []Config{
 	{ConfigKey: "enable_antihotlink", Value: "false", Description: "是否启用防盗链"},
 	{ConfigKey: "antihotlink_domains", Value: "", Description: "防盗链允许的域名列表（逗号分隔）"},
 	{ConfigKey: "antihotlink_allow_empty", Value: "true", Description: "是否允许空Referer"},
+	{ConfigKey: "user_initial_capacity", Value: "5120000.00", Description: "新注册用户默认存储空间(字节,0表示无限制)"},
+}
+
+// GetDefaultUserCapacityBytes 读取"新注册用户默认存储空间"配置(单位:字节)
+// 配置缺失或无法解析时返回 0(无限制);配置值兼容 "5120000.00" 这类小数字符串
+func GetDefaultUserCapacityBytes(db *gorm.DB) uint64 {
+	val, err := GetConfigValue(db, "user_initial_capacity")
+	if err != nil {
+		return 0
+	}
+	f, err := strconv.ParseFloat(strings.TrimSpace(val), 64)
+	if err != nil || f <= 0 {
+		return 0
+	}
+	return uint64(f)
 }
 
 // InitDefaultConfigs 检查并初始化默认配置

@@ -110,6 +110,12 @@ func UploadImage(c *gin.Context) {
 		return
 	}
 
+	// 检查用户存储容量
+	if !checkUserCapacity(c, user, file.Size) {
+		applog.Logger.Warn("upload: capacity exceeded", "request_id", rid, "handler", "UploadImage", "user_id", userID, "size", file.Size)
+		return
+	}
+
 	userConfig, err := user.GetUserConfig()
 	if err != nil {
 		userConfig = model.GetDefaultUserConfig()
@@ -290,6 +296,11 @@ func UploadImageFromURL(c *gin.Context) {
 	filename := filepath.Base(urlPath)
 	if filename == "" || filename == "." {
 		filename = "image" + ext
+	}
+
+	// 检查用户存储容量
+	if !checkUserCapacity(c, user, int64(len(imageData))) {
+		return
 	}
 
 	userConfig, err := user.GetUserConfig()
